@@ -87,5 +87,11 @@ final_work_state: <state vector omitted>
 ## Notes for Development
 
 - Tests currently cover gates, state ops, modular unitaries, iterative PE, classical post-processing, and top-level Shor flow.
-- Code fails at prime inputs.
+- Code fails at prime inputs only.
 - Modular unitaries currently have no gate backend (i.e. we assume the $U^j$ unitaries are made and directly permute the state)
+- `classical_post.py` implementation after PE includes a `reduce_to_order` function which checks prime
+factors of $r$ up to $\sqrt{r}$ in order to reduce it further to minimal order. If $r$ is large, could take 
+$O(\sqrt{N}) = O(\sqrt{2^L})$ tries (inefficient exponential runtime). 
+- `classical_post.py` also includes a `recover_order_from_fraction` function which tries to correct the case where
+the PE yields $p/q$ instead of $s/r$ by checking if $r \times n$ is the order, for $n \leq N$ (inefficient exponential runtime).
+- `config.py` currently unused. Future modifications to include usage in `main.py` and future files.
