@@ -1,0 +1,44 @@
+One-Shot Shor Success-vs-Bits Data Summary
+N = 21
+Base selection = fresh random coprime base a for each trial
+True order r = not fixed (depends on sampled a)
+Trials per bit value = 100
+Seed = random
+
+Graph note:
+  Fixed odd-composite N and fresh random coprime base a each trial
+  Success means one-shot order recovery followed by successful factor extraction
+  Number of phase bits swept from 1 to 30
+
+Per-bit data:
+  num bits | success rate | successful trials | total trials
+         1 |        0.120 |                12 |          100
+         2 |        0.070 |                 7 |          100
+         3 |        0.090 |                 9 |          100
+         4 |        0.100 |                10 |          100
+         5 |        0.170 |                17 |          100
+         6 |        0.210 |                21 |          100
+         7 |        0.210 |                21 |          100
+         8 |        0.260 |                26 |          100
+         9 |        0.220 |                22 |          100
+        10 |        0.200 |                20 |          100
+        11 |        0.220 |                22 |          100
+        12 |        0.230 |                23 |          100
+        13 |        0.220 |                22 |          100
+        14 |        0.250 |                25 |          100
+        15 |        0.220 |                22 |          100
+        16 |        0.260 |                26 |          100
+        17 |        0.210 |                21 |          100
+        18 |        0.170 |                17 |          100
+        19 |        0.240 |                24 |          100
+        20 |        0.210 |                21 |          100
+        21 |        0.230 |                23 |          100
+        22 |        0.210 |                21 |          100
+        23 |        0.230 |                23 |          100
+        24 |        0.220 |                22 |          100
+        25 |        0.240 |                24 |          100
+        26 |        0.280 |                28 |          100
+        27 |        0.230 |                23 |          100
+        28 |        0.310 |                31 |          100
+        29 |        0.210 |                21 |          100
+        30 |        0.270 |                27 |          100

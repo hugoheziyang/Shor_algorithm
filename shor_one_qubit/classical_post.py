@@ -67,6 +67,40 @@ def convergents(x: Fraction) -> list[Fraction]:
     return convergents_from_cf(continued_fraction_expansion(x))
 
 
+def recover_order_from_fraction_one_shot(phase_frac: Fraction, a: int, N: int) -> int | None:
+    '''
+    Recover the order from one phase-estimation shot without any multiplier or
+    factor-stripping rescue loops.
+
+    This models a hardware-like workflow: inspect the continued-fraction
+    convergents with denominator bounded by the expected order scale and accept
+    the first one that is already a valid order. If none verify, return None
+    and rely on another quantum run.
+    '''
+    if not (0 <= phase_frac < 1):
+        raise ValueError("phase_frac must satisfy 0 <= phase_frac < 1")
+
+    for frac in convergents(phase_frac):
+        q = frac.denominator
+        if q <= 0:
+            continue
+        if q >= N:
+            break
+        if pow(a, q, N) == 1:
+            return q
+
+    return None
+
+
+def recover_order_from_bits_one_shot(bits: list[int], a: int, N: int) -> int | None:
+    '''
+    Recover the order from one measured bit string without simulator-side
+    rescue loops.
+    '''
+    phase_frac = bits_to_fraction(bits)
+    return recover_order_from_fraction_one_shot(phase_frac, a, N)
+
+
 def reduce_to_order(a: int, candidate_r: int, N: int) -> int:
     '''
     Reduce a candidate exponent to the actual order by removing prime factors.

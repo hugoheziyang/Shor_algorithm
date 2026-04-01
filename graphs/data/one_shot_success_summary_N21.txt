@@ -1,0 +1,34 @@
+One-Shot Shor Graph Data Summary
+N = 21
+Admissible bases used = 10
+Trials per base = 100
+Seed = random
+
+Order graph note:
+  All coprime bases a with 2 <= a <= N - 2
+  100 one-shot trials per base, seed=random
+  Here, n = number of bases with that true order
+
+Per-base graph note:
+  All coprime bases a with 2 <= a <= N - 2
+  100 one-shot trials per base, seed=random
+  Here, r = true multiplicative order for that base
+
+Per-base data:
+  base a | true order r | success rate
+       2 |            6 | 0.430
+       4 |            3 | 0.000
+       5 |            6 | 0.000
+       8 |            2 | 0.520
+      10 |            6 | 0.360
+      11 |            6 | 0.290
+      13 |            2 | 0.520
+      16 |            3 | 0.000
+      17 |            6 | 0.000
+      19 |            6 | 0.410
+
+Order summary:
+  order r | mean success |   std | number of bases
+        2 |        0.520 | 0.000 |               2
+        3 |        0.000 | 0.000 |               2
+        6 |        0.248 | 0.181 |               6

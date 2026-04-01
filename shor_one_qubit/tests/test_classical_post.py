@@ -5,6 +5,8 @@ from shor_one_qubit.classical_post import (
     continued_fraction_expansion,
     convergents_from_cf,
     convergents,
+    recover_order_from_fraction_one_shot,
+    recover_order_from_bits_one_shot,
     reduce_to_order,
     recover_order_from_fraction,
     recover_order_from_bits,
@@ -51,10 +53,42 @@ def test_recover_order_from_fraction_reduced_phase():
     assert r == 4
 
 
+def test_recover_order_from_fraction_one_shot():
+    r = recover_order_from_fraction_one_shot(Fraction(1, 4), a=2, N=15)
+    assert r == 4
+
+
+def test_recover_order_from_fraction_one_shot_reduced_phase_returns_none():
+    # A single hardware-like shot only reveals denominator 2 here, not the
+    # full order 4, so post-processing should fail cleanly and rely on a rerun.
+    r = recover_order_from_fraction_one_shot(Fraction(1, 2), a=2, N=15)
+    assert r is None
+
+
+def test_recover_order_from_fraction_one_shot_checks_all_bounded_convergents():
+    # The convergents of 2/9 include 1/4 and then 2/9. For a=2 mod 15 the true
+    # order is 4, so a one-shot routine should not insist on the last bounded
+    # convergent if an earlier bounded convergent already verifies.
+    r = recover_order_from_fraction_one_shot(Fraction(2, 9), a=2, N=15)
+    assert r == 4
+
+
 def test_recover_order_from_bits():
     bits = [0, 1, 0, 0]  # 0.0100_2 = 1/4
     r = recover_order_from_bits(bits, a=2, N=15)
     assert r == 4
+
+
+def test_recover_order_from_bits_one_shot():
+    bits = [0, 1, 0, 0]  # 0.0100_2 = 1/4
+    r = recover_order_from_bits_one_shot(bits, a=2, N=15)
+    assert r == 4
+
+
+def test_recover_order_from_bits_one_shot_reduced_phase_returns_none():
+    bits = [1, 0, 0, 0]  # 0.1000_2 = 1/2
+    r = recover_order_from_bits_one_shot(bits, a=2, N=15)
+    assert r is None
 
 
 def test_shor_factors_from_order():
