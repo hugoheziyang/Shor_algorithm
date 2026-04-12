@@ -19,6 +19,7 @@ The code is written in plain NumPy and is intended for small, demo-scale integer
 - `shor_one_qubit/tests/`: unit tests for all modules.
 - `graphs/plot_one_shot_success_vs_order.py`: graph scripts for success versus true order and per-base success.
 - `graphs/plot_one_shot_success_vs_bits.py`: graph script for success versus the number of phase-estimation bits.
+- `graphs/plot_one_shot_success_vs_attempts.py`: graph script for success versus the allowed number of one-shot attempts.
 - `graphs/figures/`: generated graph image outputs.
 - `graphs/data/`: generated text summaries for graph runs.
 
@@ -52,7 +53,7 @@ python main.py 21 --a 11 --bits 10 --seed 282
 CLI options:
 - `N` (positional): integer to factor.
 - `--a`: optional base for a single attempt.
-- `--bits`: number of phase-estimation bits.
+- `--bits`: number of phase-estimation bits. If omitted, the default is `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
 - `--attempts`: max attempts (used when `--a` is omitted). Default is `1` for `one_shot` and `10` for `rescue`.
 - `--postprocess`: classical post-processing mode, either `one_shot` (default, hardware-like) or `rescue`.
 - `--seed`: optional RNG seed for reproducibility. If omitted, fresh randomness is used.
@@ -95,7 +96,7 @@ base, and then produces:
 Useful options:
 - `--trials-per-a`: number of one-shot trials per base (default `100`).
 - `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
-- `--bits`: override the number of phase-estimation bits.
+- `--bits`: override the number of phase-estimation bits. If omitted, the script uses `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
 - `--output`: custom output path for the figure.
 
 The repository also includes a fixed-instance bit-sweep script:
@@ -128,6 +129,41 @@ Useful options:
 - `--max-bits`: maximum bit count in the sweep (default `default_num_phase_bits(N)`).
 - `--trials-per-bits`: number of one-shot trials per bit count (default `100`).
 - `--a`: optional fixed coprime base. If omitted, a fresh random coprime base is sampled each trial.
+- `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
+- `--output`: custom output path for the figure.
+
+The repository also includes a sweep over the number of allowed one-shot runs
+for the top-level `one_shot` workflow:
+
+```bash
+python graphs/plot_one_shot_success_vs_attempts.py 21
+```
+
+By default this writes:
+
+```text
+graphs/figures/one_shot_success_vs_attempts_N21.png
+graphs/data/one_shot_success_vs_attempts_summary_N21.txt
+```
+
+This plot shows empirical factorization success probability versus the maximum
+number of allowed one-shot runs for one fixed odd composite `N`. Each trial
+uses the full `shor_factor(..., postprocess_mode="one_shot")` flow, so a fresh
+random coprime base is selected internally on each attempt. If `--bits` is
+omitted, this script uses `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
+
+Interpretation of the axes and sampling:
+- `max-attempts = k` means one top-level factoring run is allowed to make up to `k` one-shot runs before being declared a failure.
+- `--trials-per-attempt-count = 100` means that, for each fixed value of `k`, the script repeats that whole top-level run `100` times and estimates the success probability from those `100` outcomes.
+- Across those `100` trials, the following stay fixed: `N`, the chosen number of allowed one-shot runs `k`, the number of phase-estimation bits, and `postprocess_mode="one_shot"`.
+- Across those `100` trials, the randomness changes: the random base choices and the phase-estimation measurement outcomes.
+- Within one single trial at `max-attempts = k`, the code may make up to `k` separate one-shot runs, and each of those runs may use a different random coprime base `a`.
+
+Useful options:
+- `--min-attempts`: minimum number of allowed one-shot runs in the sweep (default `1`).
+- `--max-attempts`: maximum number of allowed one-shot runs in the sweep (default `10`).
+- `--trials-per-attempt-count`: number of independent simulated top-level runs used to estimate success probability for each chosen number of allowed one-shot runs (default `100`).
+- `--bits`: optional override for the number of phase-estimation bits.
 - `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
 - `--output`: custom output path for the figure.
 

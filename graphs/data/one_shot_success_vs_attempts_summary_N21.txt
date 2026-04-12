@@ -1,0 +1,25 @@
+One-Shot Shor Success-vs-Runs Data Summary
+N = 21
+Phase-estimation bits = 10
+Trials per chosen run count = 100
+Seed = random
+
+Graph note:
+  Fixed odd-composite N
+  Each trial uses the top-level shor_factor flow with postprocess_mode = one_shot
+  A fresh random coprime base a may be chosen internally for each one-shot run
+  Each plotted point corresponds to a chosen maximum number of allowed one-shot runs
+  Maximum number of allowed one-shot runs swept from 1 to 10
+
+Per-run-count data:
+  max one-shot runs | success rate | successful trials | total trials
+             1 |        0.260 |                26 |          100
+             2 |        0.500 |                50 |          100
+             3 |        0.450 |                45 |          100
+             4 |        0.610 |                61 |          100
+             5 |        0.780 |                78 |          100
+             6 |        0.840 |                84 |          100
+             7 |        0.860 |                86 |          100
+             8 |        0.880 |                88 |          100
+             9 |        0.900 |                90 |          100
+            10 |        0.940 |                94 |          100
