@@ -17,11 +17,7 @@ The code is written in plain NumPy and is intended for small, demo-scale integer
 - `shor_one_qubit/gates.py`: small 2x2 gate primitives.
 - `shor_one_qubit/classical_post.py`: phase-to-order recovery and factor extraction.
 - `shor_one_qubit/tests/`: unit tests for all modules.
-- `graphs/plot_one_shot_success_vs_order.py`: graph scripts for success versus true order and per-base success.
-- `graphs/plot_one_shot_success_vs_bits.py`: graph script for success versus the number of phase-estimation bits.
-- `graphs/plot_one_shot_success_vs_attempts.py`: graph script for success versus the allowed number of one-shot attempts.
-- `graphs/figures/`: generated graph image outputs.
-- `graphs/data/`: generated text summaries for graph runs.
+- `graphs/`: graph scripts, generated figures/data, and graph-specific documentation in `graphs/README.md`.
 
 ## Requirements
 
@@ -70,102 +66,9 @@ Note: `python -m pytest` is the reliable invocation for this layout because runn
 
 ## Generating Graphs
 
-The repository includes a graphing script for the hardware-like `one_shot`
-post-processing workflow:
-
-```bash
-python graphs/plot_one_shot_success_vs_order.py 21
-```
-
-By default this writes:
-
-```text
-graphs/figures/one_shot_success_vs_order_N21.png
-graphs/figures/one_shot_success_per_base_N21.png
-graphs/data/one_shot_success_summary_N21.txt
-```
-
-The plot shows empirical factorization success probability versus the true
-multiplicative order `r` for one fixed odd composite `N`. The script uses all
-coprime bases `a` with `2 <= a <= N - 2`, runs `one_shot` repeatedly for each
-base, and then produces:
-- an order-based graph aggregated by the true order `r`;
-- a per-base graph showing each admissible base `a` and its empirical success rate;
-- a text summary containing the figure notes plus the per-base table `a, r, success`.
-
-Useful options:
-- `--trials-per-a`: number of one-shot trials per base (default `100`).
-- `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
-- `--bits`: override the number of phase-estimation bits. If omitted, the script uses `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
-- `--output`: custom output path for the figure.
-
-The repository also includes a fixed-instance bit-sweep script:
-
-```bash
-python graphs/plot_one_shot_success_vs_bits.py 21 --a 11
-```
-
-If `--a` is omitted, the script instead samples a fresh random coprime base
-for each trial:
-
-```bash
-python graphs/plot_one_shot_success_vs_bits.py 21
-```
-
-By default this writes:
-
-```text
-graphs/figures/one_shot_success_vs_bits_N21_a11.png
-graphs/data/one_shot_success_vs_bits_summary_N21_a11.txt
-```
-
-This plot shows empirical one-shot factorization success probability versus the
-number of phase-estimation bits for either:
-- one fixed pair `(N, a)`, if `--a` is provided;
-- one fixed `N` with fresh random coprime base selection each trial, if `--a` is omitted.
-
-Useful options:
-- `--min-bits`: minimum bit count in the sweep (default `1`).
-- `--max-bits`: maximum bit count in the sweep (default `default_num_phase_bits(N)`).
-- `--trials-per-bits`: number of one-shot trials per bit count (default `100`).
-- `--a`: optional fixed coprime base. If omitted, a fresh random coprime base is sampled each trial.
-- `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
-- `--output`: custom output path for the figure.
-
-The repository also includes a sweep over the number of allowed one-shot runs
-for the top-level `one_shot` workflow:
-
-```bash
-python graphs/plot_one_shot_success_vs_attempts.py 21
-```
-
-By default this writes:
-
-```text
-graphs/figures/one_shot_success_vs_attempts_N21.png
-graphs/data/one_shot_success_vs_attempts_summary_N21.txt
-```
-
-This plot shows empirical factorization success probability versus the maximum
-number of allowed one-shot runs for one fixed odd composite `N`. Each trial
-uses the full `shor_factor(..., postprocess_mode="one_shot")` flow, so a fresh
-random coprime base is selected internally on each attempt. If `--bits` is
-omitted, this script uses `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
-
-Interpretation of the axes and sampling:
-- `max-attempts = k` means one top-level factoring run is allowed to make up to `k` one-shot runs before being declared a failure.
-- `--trials-per-attempt-count = 100` means that, for each fixed value of `k`, the script repeats that whole top-level run `100` times and estimates the success probability from those `100` outcomes.
-- Across those `100` trials, the following stay fixed: `N`, the chosen number of allowed one-shot runs `k`, the number of phase-estimation bits, and `postprocess_mode="one_shot"`.
-- Across those `100` trials, the randomness changes: the random base choices and the phase-estimation measurement outcomes.
-- Within one single trial at `max-attempts = k`, the code may make up to `k` separate one-shot runs, and each of those runs may use a different random coprime base `a`.
-
-Useful options:
-- `--min-attempts`: minimum number of allowed one-shot runs in the sweep (default `1`).
-- `--max-attempts`: maximum number of allowed one-shot runs in the sweep (default `10`).
-- `--trials-per-attempt-count`: number of independent simulated top-level runs used to estimate success probability for each chosen number of allowed one-shot runs (default `100`).
-- `--bits`: optional override for the number of phase-estimation bits.
-- `--seed`: optional master seed for reproducible sampling. If omitted, fresh random sampling is used.
-- `--output`: custom output path for the figure.
+Graphing scripts and their generated outputs live in `graphs/`.
+Detailed usage, default output paths, and experiment descriptions are in
+`graphs/README.md`.
 
 ## Expected Behavior and Limits
 

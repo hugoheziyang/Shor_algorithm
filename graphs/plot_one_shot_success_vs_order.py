@@ -388,7 +388,11 @@ def main() -> None:
         per_base_output_path = args.output.with_name(
             f"{args.output.stem}_per_base{args.output.suffix}"
         )
-    data_output_path = Path(__file__).resolve().parent / "data" / f"one_shot_success_summary_N{args.N}.txt"
+    data_output_path = (
+        Path(__file__).resolve().parent
+        / "data"
+        / f"one_shot_success_vs_order_summary_N{args.N}.txt"
+    )
 
     master_rng = np.random.default_rng(args.seed)
     instance_results: list[InstanceResult] = []
