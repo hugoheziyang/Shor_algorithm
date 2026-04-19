@@ -26,6 +26,14 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from shor_one_qubit.classical_post import shor_factors_from_order
+from shor_one_qubit.errors import (
+    ErrorConfig,
+    MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+    measurement_bitflip_filename_suffix,
+    measurement_bitflip_label,
+    measurement_bitflip_title_suffix,
+    parse_measurement_bitflip_error_arg,
+)
 from shor_one_qubit.shor import (
     default_num_phase_bits,
     perfect_power_decomposition,
@@ -112,6 +120,7 @@ def simulate_instance(
     trials: int,
     rng: np.random.Generator,
     num_phase_bits: int | None = None,
+    error_config: ErrorConfig | None = None,
 ) -> InstanceResult:
     """
     Estimate the one-shot factorization success rate for a fixed (N, a).
@@ -123,6 +132,7 @@ def simulate_instance(
         num_phase_bits = default_num_phase_bits(N)
 
     successful_trials = 0
+    error_config = error_config or ErrorConfig()
 
     for _ in range(trials):
         result = shor_order_finding_attempt(
@@ -131,6 +141,7 @@ def simulate_instance(
             num_phase_bits=num_phase_bits,
             rng=rng,
             postprocess_mode="one_shot",
+            error_config=error_config,
         )
 
         factors = shor_factors_from_order(a, result["order"], N)
@@ -176,6 +187,7 @@ def write_data_summary(
     instance_results: list[InstanceResult],
     summary_rows: list[dict],
     trials_per_a: int,
+    error_config: ErrorConfig | None,
     seed: int | None,
 ) -> None:
     """
@@ -184,6 +196,7 @@ def write_data_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     seed_label = "random" if seed is None else str(seed)
+    error_label = measurement_bitflip_label(error_config)
     ordered_results = sorted(instance_results, key=lambda result: result.a)
 
     lines = [
@@ -191,15 +204,18 @@ def write_data_summary(
         f"N = {N}",
         f"Admissible bases used = {len(ordered_results)}",
         f"Trials per base = {trials_per_a}",
+        f"Measurement bit-flip error = {error_label}",
         f"Seed = {seed_label}",
         "",
         "Order graph note:",
         "  All coprime bases a with 2 <= a <= N - 2",
+        f"  Measurement bit-flip error: {error_label}",
         f"  {trials_per_a} one-shot trials per base, seed={seed_label}",
         "  Here, n = number of bases with that true order",
         "",
         "Per-base graph note:",
         "  All coprime bases a with 2 <= a <= N - 2",
+        f"  Measurement bit-flip error: {error_label}",
         f"  {trials_per_a} one-shot trials per base, seed={seed_label}",
         "  Here, r = true multiplicative order for that base",
         "",
@@ -235,6 +251,7 @@ def plot_success_vs_order(
     N: int,
     instance_results: list[InstanceResult],
     summary_rows: list[dict],
+    error_config: ErrorConfig | None,
     output_path: Path,
 ) -> None:
     """
@@ -282,7 +299,10 @@ def plot_success_vs_order(
 
     ax.set_xlabel("True multiplicative order r", labelpad=18)
     ax.set_ylabel("Empirical one-shot factorization success probability")
-    ax.set_title(f"One-Shot Shor Success Probability vs True Order for N = {N}")
+    ax.set_title(
+        "One-Shot Shor Success Probability vs True Order for N = "
+        f"{N}{measurement_bitflip_title_suffix(error_config)}"
+    )
     ax.set_ylim(-0.03, 1.03)
     ax.grid(True, alpha=0.25)
     ax.legend()
@@ -295,6 +315,7 @@ def plot_success_vs_order(
 def plot_success_vs_base(
     N: int,
     instance_results: list[InstanceResult],
+    error_config: ErrorConfig | None,
     output_path: Path,
 ) -> None:
     """
@@ -319,7 +340,10 @@ def plot_success_vs_base(
 
     ax.set_xlabel("Base a", labelpad=18)
     ax.set_ylabel("Empirical one-shot factorization success probability")
-    ax.set_title(f"One-Shot Shor Success Probability by Base for N = {N}")
+    ax.set_title(
+        "One-Shot Shor Success Probability by Base for N = "
+        f"{N}{measurement_bitflip_title_suffix(error_config)}"
+    )
     ax.set_xticks(x_values)
     ax.set_xticklabels([str(value) for value in x_values], rotation=90, fontsize=8)
     ax.tick_params(axis="y", labelsize=9)
@@ -361,6 +385,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Override the number of phase-estimation bits for all runs",
     )
     parser.add_argument(
+        "--measurement-bitflip-error",
+        nargs="?",
+        const=MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable measurement bit-flip errors. Use without a value for "
+            "exactly one random bit-flip per iterative phase-estimation run, "
+            "or provide P in [0,1] for independent per-detection bit-flips."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -374,6 +410,12 @@ def main() -> None:
 
     parser = build_argument_parser()
     args = parser.parse_args()
+    try:
+        error_config = parse_measurement_bitflip_error_arg(
+            args.measurement_bitflip_error
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     validate_target_number(args.N)
     bases_with_orders = admissible_bases_with_orders(args.N)
@@ -381,17 +423,27 @@ def main() -> None:
         raise ValueError("no admissible coprime bases found for the requested N")
 
     if args.output is None:
-        output_path = Path(__file__).resolve().parent / "figures" / f"one_shot_success_vs_order_N{args.N}.png"
-        per_base_output_path = Path(__file__).resolve().parent / "figures" / f"one_shot_success_per_base_N{args.N}.png"
+        filename_suffix = measurement_bitflip_filename_suffix(error_config)
+        output_path = (
+            Path(__file__).resolve().parent
+            / "figures"
+            / f"one_shot_success_vs_order_N{args.N}{filename_suffix}.png"
+        )
+        per_base_output_path = (
+            Path(__file__).resolve().parent
+            / "figures"
+            / f"one_shot_success_per_base_N{args.N}{filename_suffix}.png"
+        )
     else:
         output_path = args.output
         per_base_output_path = args.output.with_name(
             f"{args.output.stem}_per_base{args.output.suffix}"
         )
+    filename_suffix = measurement_bitflip_filename_suffix(error_config)
     data_output_path = (
         Path(__file__).resolve().parent
         / "data"
-        / f"one_shot_success_vs_order_summary_N{args.N}.txt"
+        / f"one_shot_success_vs_order_summary_N{args.N}{filename_suffix}.txt"
     )
 
     master_rng = np.random.default_rng(args.seed)
@@ -408,6 +460,7 @@ def main() -> None:
                 trials=args.trials_per_a,
                 rng=instance_rng,
                 num_phase_bits=args.bits,
+                error_config=error_config,
             )
         )
 
@@ -416,11 +469,13 @@ def main() -> None:
         N=args.N,
         instance_results=instance_results,
         summary_rows=summary_rows,
+        error_config=error_config,
         output_path=output_path,
     )
     plot_success_vs_base(
         N=args.N,
         instance_results=instance_results,
+        error_config=error_config,
         output_path=per_base_output_path,
     )
     write_data_summary(
@@ -429,6 +484,7 @@ def main() -> None:
         instance_results=instance_results,
         summary_rows=summary_rows,
         trials_per_a=args.trials_per_a,
+        error_config=error_config,
         seed=args.seed,
     )
 
@@ -437,6 +493,7 @@ def main() -> None:
     print(f"Saved probability-vs-base figure to: {per_base_output_path}")
     print(f"Saved data summary to: {data_output_path}")
     print(f"N = {args.N}")
+    print(f"Measurement bit-flip error: {measurement_bitflip_label(error_config)}")
     print(f"Admissible bases used: {len(bases_with_orders)}")
     print(f"Trials per base: {args.trials_per_a}")
     print(f"Seed: {seed_label}")

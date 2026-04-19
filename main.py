@@ -2,6 +2,10 @@ import argparse
 import time
 import numpy as np
 
+from shor_one_qubit.errors import (
+    MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+    parse_measurement_bitflip_error_arg,
+)
 from shor_one_qubit.shor import shor_factor, shor_attempt
 
 
@@ -30,10 +34,28 @@ def main():
         default=None,
         help="Optional RNG seed for reproducibility",
     )
+    parser.add_argument(
+        "--measurement-bitflip-error",
+        nargs="?",
+        const=MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable measurement bit-flip errors. Use without a value for "
+            "exactly one random bit-flip per iterative phase-estimation run, "
+            "or provide P in [0,1] for independent per-detection bit-flips."
+        ),
+    )
 
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
+    try:
+        error_config = parse_measurement_bitflip_error_arg(
+            args.measurement_bitflip_error
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.a is None:
         result = shor_factor(
@@ -42,6 +64,7 @@ def main():
             num_phase_bits=args.bits,
             rng=rng,
             postprocess_mode=args.postprocess,
+            error_config=error_config,
         )
     else:
         result = shor_attempt(
@@ -50,6 +73,7 @@ def main():
             num_phase_bits=args.bits,
             rng=rng,
             postprocess_mode=args.postprocess,
+            error_config=error_config,
         )
 
     print("Result:")

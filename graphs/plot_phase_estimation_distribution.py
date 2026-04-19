@@ -25,6 +25,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from shor_one_qubit.errors import (
+    ErrorConfig,
+    MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+    measurement_bitflip_filename_suffix,
+    measurement_bitflip_label,
+    measurement_bitflip_title_suffix,
+    parse_measurement_bitflip_error_arg,
+)
 from shor_one_qubit.shor import (
     default_num_phase_bits,
     perfect_power_decomposition,
@@ -107,6 +115,7 @@ def sample_phase_distribution(
     num_phase_bits: int,
     trials: int,
     rng: np.random.Generator,
+    error_config: ErrorConfig | None = None,
 ) -> list[PhaseOutcomeRow]:
     """
     Sample the iterative phase-estimation outcomes for a fixed (N, a).
@@ -118,6 +127,7 @@ def sample_phase_distribution(
 
     counts: Counter[int] = Counter()
     phase_denominator = 2 ** num_phase_bits
+    error_config = error_config or ErrorConfig()
 
     for _ in range(trials):
         result = shor_order_finding_attempt(
@@ -126,6 +136,7 @@ def sample_phase_distribution(
             num_phase_bits=num_phase_bits,
             rng=rng,
             postprocess_mode="one_shot",
+            error_config=error_config,
         )
         outcome = bits_to_integer(result["bits"])
         counts[outcome] += 1
@@ -154,6 +165,7 @@ def write_data_summary(
     true_order: int,
     num_phase_bits: int,
     trials: int,
+    error_config: ErrorConfig | None,
     seed: int | None,
     rows: list[PhaseOutcomeRow],
 ) -> None:
@@ -163,6 +175,7 @@ def write_data_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     seed_label = "random" if seed is None else str(seed)
+    error_label = measurement_bitflip_label(error_config)
     bits_header = "bits"
     outcome_header = "outcome integer m"
     phase_header = "decimal phase"
@@ -191,11 +204,13 @@ def write_data_summary(
         f"True order r = {true_order}",
         f"Phase-estimation bits = {num_phase_bits}",
         f"Trials = {trials}",
+        f"Measurement bit-flip error = {error_label}",
         f"Seed = {seed_label}",
         "",
         "Graph note:",
         "  Fixed odd-composite N and fixed coprime base a",
         "  Each trial reruns the iterative phase-estimation procedure for the same (N, a)",
+        f"  Measurement bit-flip error: {error_label}",
         "  Horizontal axis shows the measured phase estimate in decimal form",
         "  Only observed phase outcomes are listed below",
         "",
@@ -227,6 +242,7 @@ def plot_phase_distribution(
     true_order: int,
     num_phase_bits: int,
     trials: int,
+    error_config: ErrorConfig | None,
     rows: list[PhaseOutcomeRow],
     output_path: Path,
 ) -> None:
@@ -259,7 +275,10 @@ def plot_phase_distribution(
     ax.set_xlim(-0.01, 1.01)
     ax.set_xlabel("Measured phase estimate (decimal)")
     ax.set_ylabel("Empirical probability")
-    ax.set_title(f"Phase-Estimation Outcome Distribution for N = {N}, a = {a}")
+    ax.set_title(
+        "Phase-Estimation Outcome Distribution for N = "
+        f"{N}, a = {a}{measurement_bitflip_title_suffix(error_config)}"
+    )
     ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
     ax.xaxis.set_major_formatter(FormatStrFormatter("%.2f"))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
@@ -270,7 +289,9 @@ def plot_phase_distribution(
     ax.text(
         0.98,
         0.98,
-        f"true order r = {true_order}\nphase bits = {num_phase_bits}\ntrials = {trials}",
+        "true order r = "
+        f"{true_order}\nphase bits = {num_phase_bits}\ntrials = {trials}\n"
+        f"measurement bit-flip error = {measurement_bitflip_label(error_config)}",
         transform=ax.transAxes,
         ha="right",
         va="top",
@@ -301,7 +322,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--bits",
         type=int,
         default=None,
-        help="Override the number of phase-estimation bits (default: 2 * ceil(log2(N)))",
+        help="Override the number of phase-estimation bits (default: 2 * ceil(log2(N)) + 1)",
     )
     parser.add_argument(
         "--trials",
@@ -314,6 +335,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Optional RNG seed for reproducible sampling",
+    )
+    parser.add_argument(
+        "--measurement-bitflip-error",
+        nargs="?",
+        const=MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable measurement bit-flip errors. Use without a value for "
+            "exactly one random bit-flip per iterative phase-estimation run, "
+            "or provide P in [0,1] for independent per-detection bit-flips."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -329,6 +362,12 @@ def main() -> None:
 
     parser = build_argument_parser()
     args = parser.parse_args()
+    try:
+        error_config = parse_measurement_bitflip_error_arg(
+            args.measurement_bitflip_error
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     validate_target_instance(args.N, args.a)
 
@@ -343,18 +382,20 @@ def main() -> None:
     true_order = multiplicative_order(args.a, args.N)
 
     if args.output is None:
+        filename_suffix = measurement_bitflip_filename_suffix(error_config)
         figure_output_path = (
             Path(__file__).resolve().parent
             / "figures"
-            / f"phase_estimation_distribution_N{args.N}_a{args.a}.png"
+            / f"phase_estimation_distribution_N{args.N}_a{args.a}{filename_suffix}.png"
         )
     else:
         figure_output_path = args.output
 
+    filename_suffix = measurement_bitflip_filename_suffix(error_config)
     data_output_path = (
         Path(__file__).resolve().parent
         / "data"
-        / f"phase_estimation_distribution_summary_N{args.N}_a{args.a}.txt"
+        / f"phase_estimation_distribution_summary_N{args.N}_a{args.a}{filename_suffix}.txt"
     )
 
     rng = np.random.default_rng(args.seed)
@@ -364,6 +405,7 @@ def main() -> None:
         num_phase_bits=num_phase_bits,
         trials=args.trials,
         rng=rng,
+        error_config=error_config,
     )
 
     plot_phase_distribution(
@@ -372,6 +414,7 @@ def main() -> None:
         true_order=true_order,
         num_phase_bits=num_phase_bits,
         trials=args.trials,
+        error_config=error_config,
         rows=rows,
         output_path=figure_output_path,
     )
@@ -382,6 +425,7 @@ def main() -> None:
         true_order=true_order,
         num_phase_bits=num_phase_bits,
         trials=args.trials,
+        error_config=error_config,
         seed=args.seed,
         rows=rows,
     )
@@ -394,6 +438,7 @@ def main() -> None:
     print(f"True order r = {true_order}")
     print(f"Phase-estimation bits = {num_phase_bits}")
     print(f"Trials = {args.trials}")
+    print(f"Measurement bit-flip error: {measurement_bitflip_label(error_config)}")
     print(f"Seed = {seed_label}")
     print(f"Elapsed time: {time.perf_counter() - start_time:.2f} s")
 

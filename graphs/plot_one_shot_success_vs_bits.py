@@ -25,6 +25,14 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from shor_one_qubit.classical_post import shor_factors_from_order
+from shor_one_qubit.errors import (
+    ErrorConfig,
+    MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+    measurement_bitflip_filename_suffix,
+    measurement_bitflip_label,
+    measurement_bitflip_title_suffix,
+    parse_measurement_bitflip_error_arg,
+)
 from shor_one_qubit.shor import (
     choose_random_a,
     default_num_phase_bits,
@@ -102,6 +110,7 @@ def simulate_for_num_bits(
     num_bits: int,
     trials: int,
     rng: np.random.Generator,
+    error_config: ErrorConfig | None = None,
 ) -> BitSweepResult:
     """
     Estimate the one-shot factorization success rate for a fixed bit count.
@@ -112,6 +121,7 @@ def simulate_for_num_bits(
         raise ValueError("trials must be >= 1")
 
     successful_trials = 0
+    error_config = error_config or ErrorConfig()
 
     for _ in range(trials):
         trial_a = choose_random_a(N, rng=rng) if a is None else a
@@ -122,6 +132,7 @@ def simulate_for_num_bits(
             num_phase_bits=num_bits,
             rng=rng,
             postprocess_mode="one_shot",
+            error_config=error_config,
         )
 
         factors = shor_factors_from_order(trial_a, result["order"], N)
@@ -142,6 +153,7 @@ def write_data_summary(
     true_order: int | None,
     results: list[BitSweepResult],
     trials_per_bits: int,
+    error_config: ErrorConfig | None,
     seed: int | None,
 ) -> None:
     """
@@ -150,6 +162,7 @@ def write_data_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     seed_label = "random" if seed is None else str(seed)
+    error_label = measurement_bitflip_label(error_config)
     if a is None:
         mode_line = "Base selection = fresh random coprime base a for each trial"
         true_order_line = "True order r = not fixed (depends on sampled a)"
@@ -165,10 +178,12 @@ def write_data_summary(
         mode_line,
         true_order_line,
         f"Trials per bit value = {trials_per_bits}",
+        f"Measurement bit-flip error = {error_label}",
         f"Seed = {seed_label}",
         "",
         "Graph note:",
         graph_note,
+        f"  Measurement bit-flip error: {error_label}",
         "  Success means one-shot order recovery followed by successful factor extraction",
         f"  Number of phase bits swept from {results[0].num_bits} to {results[-1].num_bits}",
         "",
@@ -192,6 +207,7 @@ def plot_success_vs_bits(
     a: int | None,
     true_order: int | None,
     results: list[BitSweepResult],
+    error_config: ErrorConfig | None,
     output_path: Path,
 ) -> None:
     """
@@ -216,9 +232,15 @@ def plot_success_vs_bits(
     ax.set_xlabel("Number of phase-estimation bits")
     ax.set_ylabel("Empirical one-shot factorization success probability")
     if a is None:
-        ax.set_title(f"One-Shot Shor Success vs Bits for N = {N} (random a per trial)")
+        ax.set_title(
+            "One-Shot Shor Success vs Bits for N = "
+            f"{N} (random a per trial){measurement_bitflip_title_suffix(error_config)}"
+        )
     else:
-        ax.set_title(f"One-Shot Shor Success vs Bits for N = {N}, a = {a}")
+        ax.set_title(
+            "One-Shot Shor Success vs Bits for N = "
+            f"{N}, a = {a}{measurement_bitflip_title_suffix(error_config)}"
+        )
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
     ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -229,7 +251,9 @@ def plot_success_vs_bits(
         ax.text(
             0.98,
             0.02,
-            f"true order r = {true_order}",
+            "true order r = "
+            f"{true_order}\nmeasurement bit-flip error = "
+            f"{measurement_bitflip_label(error_config)}",
             transform=ax.transAxes,
             ha="right",
             va="bottom",
@@ -281,6 +305,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Optional master RNG seed for reproducible sampling",
     )
     parser.add_argument(
+        "--measurement-bitflip-error",
+        nargs="?",
+        const=MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable measurement bit-flip errors. Use without a value for "
+            "exactly one random bit-flip per iterative phase-estimation run, "
+            "or provide P in [0,1] for independent per-detection bit-flips."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -294,6 +330,12 @@ def main() -> None:
 
     parser = build_argument_parser()
     args = parser.parse_args()
+    try:
+        error_config = parse_measurement_bitflip_error_arg(
+            args.measurement_bitflip_error
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     validate_target_instance(args.N, args.a)
 
@@ -311,19 +353,21 @@ def main() -> None:
 
     if args.output is None:
         suffix = f"a{args.a}" if args.a is not None else "random_a"
+        filename_suffix = measurement_bitflip_filename_suffix(error_config)
         figure_output_path = (
             Path(__file__).resolve().parent
             / "figures"
-            / f"one_shot_success_vs_bits_N{args.N}_{suffix}.png"
+            / f"one_shot_success_vs_bits_N{args.N}_{suffix}{filename_suffix}.png"
         )
     else:
         figure_output_path = args.output
 
     suffix = f"a{args.a}" if args.a is not None else "random_a"
+    filename_suffix = measurement_bitflip_filename_suffix(error_config)
     data_output_path = (
         Path(__file__).resolve().parent
         / "data"
-        / f"one_shot_success_vs_bits_summary_N{args.N}_{suffix}.txt"
+        / f"one_shot_success_vs_bits_summary_N{args.N}_{suffix}{filename_suffix}.txt"
     )
 
     true_order = None if args.a is None else multiplicative_order(args.a, args.N)
@@ -340,6 +384,7 @@ def main() -> None:
                 num_bits=num_bits,
                 trials=args.trials_per_bits,
                 rng=instance_rng,
+                error_config=error_config,
             )
         )
 
@@ -348,6 +393,7 @@ def main() -> None:
         a=args.a,
         true_order=true_order,
         results=results,
+        error_config=error_config,
         output_path=figure_output_path,
     )
     write_data_summary(
@@ -357,6 +403,7 @@ def main() -> None:
         true_order=true_order,
         results=results,
         trials_per_bits=args.trials_per_bits,
+        error_config=error_config,
         seed=args.seed,
     )
 
@@ -369,6 +416,7 @@ def main() -> None:
     else:
         print(f"a = {args.a}")
         print(f"True order r = {true_order}")
+    print(f"Measurement bit-flip error: {measurement_bitflip_label(error_config)}")
     print(f"Bits swept from {args.min_bits} to {max_bits}")
     print(f"Trials per bit value: {args.trials_per_bits}")
     print(f"Seed: {seed_label}")

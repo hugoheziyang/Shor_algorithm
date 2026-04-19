@@ -1,5 +1,10 @@
 import numpy as np
 
+from .errors import (
+    apply_measurement_bitflip,
+    choose_measurement_bitflip_mask,
+    validate_error_config,
+)
 from .gates import H, phase
 from .state_ops import (
     make_joint_state,
@@ -56,7 +61,13 @@ def one_iterative_pe_step(work_state, controlled_power_op, feedback=0.0, rng=Non
     return bit, new_work_state
 
 
-def iterative_phase_estimation(initial_work_state, controlled_power_factory, num_bits, rng=None):
+def iterative_phase_estimation(
+    initial_work_state,
+    controlled_power_factory,
+    num_bits,
+    rng=None,
+    error_config=None,
+):
     """
     Estimate `num_bits` binary digits of the eigenphase using one reusable
     control qubit and semiclassical feedback.
@@ -64,8 +75,17 @@ def iterative_phase_estimation(initial_work_state, controlled_power_factory, num
     if num_bits < 1:
         raise ValueError("num_bits must be >= 1")
 
+    if rng is None:
+        rng = np.random.default_rng()
+
+    error_config = validate_error_config(error_config)
     work_state = np.asarray(initial_work_state, dtype=complex)
     bits = [None] * num_bits
+    measurement_bitflip_mask = choose_measurement_bitflip_mask(
+        num_bits,
+        error_config=error_config,
+        rng=rng,
+    )
 
     for j in range(num_bits, 0, -1):
         power = 2 ** (j - 1)
@@ -76,13 +96,17 @@ def iterative_phase_estimation(initial_work_state, controlled_power_factory, num
         else:
             angle = feedback_angle(bits, j)
 
-        bit, work_state = one_iterative_pe_step(
+        measured_bit, work_state = one_iterative_pe_step(
             work_state=work_state,
             controlled_power_op=work_op,
             feedback=angle,
             rng=rng,
         )
 
+        bit = apply_measurement_bitflip(
+            measured_bit,
+            should_flip=measurement_bitflip_mask[j - 1],
+        )
         bits[j - 1] = bit
 
     phase_estimate = sum(bits[j - 1] / (2 ** j) for j in range(1, num_bits + 1))

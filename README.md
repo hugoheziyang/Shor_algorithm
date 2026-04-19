@@ -16,6 +16,7 @@ The code is written in plain NumPy and is intended for small, demo-scale integer
 - `shor_one_qubit/state_ops.py`: joint control/work state operations and measurement.
 - `shor_one_qubit/gates.py`: small 2x2 gate primitives.
 - `shor_one_qubit/classical_post.py`: phase-to-order recovery and factor extraction.
+- `shor_one_qubit/errors.py`: configurable simulator error models.
 - `shor_one_qubit/tests/`: unit tests for all modules.
 - `graphs/`: graph scripts, generated figures/data, and graph-specific documentation in `graphs/README.md`.
 
@@ -49,9 +50,10 @@ python main.py 21 --a 11 --bits 10 --seed 282
 CLI options:
 - `N` (positional): integer to factor.
 - `--a`: optional base for a single attempt.
-- `--bits`: number of phase-estimation bits. If omitted, the default is `default_num_phase_bits(N) = 2 * ceil(log2(N))`.
+- `--bits`: number of phase-estimation bits. If omitted, the default is `default_num_phase_bits(N) = 2 * ceil(log2(N)) + 1`.
 - `--attempts`: max attempts (used when `--a` is omitted). Default is `1` for `one_shot` and `10` for `rescue`.
 - `--postprocess`: classical post-processing mode, either `one_shot` (default, hardware-like) or `rescue`.
+- `--measurement-bitflip-error [P]`: use without a value for exactly one random measurement bit-flip per iterative phase-estimation run, or provide `P` in `[0, 1]` for independent per-detection bit-flips.
 - `--seed`: optional RNG seed for reproducibility. If omitted, fresh randomness is used.
 
 ## Running Tests
@@ -109,4 +111,5 @@ final_work_state: <state vector omitted>
   - hardware-like one-shot continued-fraction helpers, which scan bounded convergents and accept the first one already verified as the order;
   - simulator-side rescue helpers, which additionally search multiples / reduce exponents to recover the true order more aggressively.
 - `shor.py` and `main.py` now default to the hardware-like `one_shot` post-processing mode, while still exposing the older `rescue` mode for comparison.
+- `errors.py` now provides the first pluggable error model: either a single random measurement bit-flip per iterative phase-estimation run, or independent per-detection measurement bit-flips with configurable probability.
 - `config.py` currently unused. Future modifications to include usage in `main.py` and future files.

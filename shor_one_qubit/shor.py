@@ -1,6 +1,7 @@
 import math
 import numpy as np
 
+from .errors import validate_error_config
 from .modular_unitaries import work_dim, apply_modmul_power_state
 from .kitaev_pe import iterative_phase_estimation
 from .classical_post import (
@@ -102,10 +103,10 @@ def default_num_phase_bits(N: int) -> int:
     """
     Default number of phase-estimation bits.
 
-    A simple standard choice is twice the work-register size.
+    A conservative standard choice is twice the work-register size plus one.
     """
     L = math.ceil(math.log2(N))
-    return 2 * L
+    return (2 * L) + 1
 
 
 def make_controlled_power_factory(a: int, N: int):
@@ -162,6 +163,7 @@ def shor_order_finding_attempt(
     num_phase_bits: int,
     rng=None,
     postprocess_mode: str = "one_shot",
+    error_config=None,
 ) -> dict:
     """
     Run one iterative phase-estimation attempt for the modular multiplication
@@ -171,6 +173,7 @@ def shor_order_finding_attempt(
     recovered order, and final work-register state.
     """
     postprocess_mode = validate_postprocess_mode(postprocess_mode)
+    error_config = validate_error_config(error_config)
 
     M = work_dim(N)
     initial_work_state = make_basis_state(1, M)
@@ -182,6 +185,7 @@ def shor_order_finding_attempt(
         controlled_power_factory=controlled_power_factory,
         num_bits=num_phase_bits,
         rng=rng,
+        error_config=error_config,
     )
 
     order = recover_order_with_mode(bits, a, N, postprocess_mode=postprocess_mode)
@@ -192,6 +196,7 @@ def shor_order_finding_attempt(
         "phase_estimate": phase_estimate,
         "order": order,
         "postprocess_mode": postprocess_mode,
+        "error_config": error_config.to_dict(),
         "final_work_state": final_work_state,
     }
 
@@ -202,6 +207,7 @@ def shor_attempt(
     num_phase_bits: int | None = None,
     rng=None,
     postprocess_mode: str = "one_shot",
+    error_config=None,
 ) -> dict:
     """
     Perform one top-level Shor attempt.
@@ -214,6 +220,7 @@ def shor_attempt(
       - then try to extract factors from the recovered order.
     """
     postprocess_mode = validate_postprocess_mode(postprocess_mode)
+    error_config = validate_error_config(error_config)
 
     if is_trivial_case(N):
         raise ValueError("N must be >= 2")
@@ -222,6 +229,7 @@ def shor_attempt(
         return {
             "N": N,
             "postprocess_mode": postprocess_mode,
+            "error_config": error_config.to_dict(),
             "success": True,
             "reason": "N is even",
             "factors": (2, N // 2),
@@ -233,6 +241,7 @@ def shor_attempt(
         return {
             "N": N,
             "postprocess_mode": postprocess_mode,
+            "error_config": error_config.to_dict(),
             "success": True,
             "reason": f"N is a perfect power: {b}^{k}",
             "factors": (b, N // b),
@@ -256,6 +265,7 @@ def shor_attempt(
             "N": N,
             "a": a,
             "postprocess_mode": postprocess_mode,
+            "error_config": error_config.to_dict(),
             "success": True,
             "reason": "nontrivial gcd found before quantum step",
             "factors": (g, N // g),
@@ -267,6 +277,7 @@ def shor_attempt(
         num_phase_bits=num_phase_bits,
         rng=rng,
         postprocess_mode=postprocess_mode,
+        error_config=error_config,
     )
 
     r = order_result["order"]
@@ -279,6 +290,7 @@ def shor_attempt(
         "a": a,
         "num_phase_bits": num_phase_bits,
         "postprocess_mode": postprocess_mode,
+        "error_config": error_config.to_dict(),
         "bits": order_result["bits"],
         "phase_estimate": order_result["phase_estimate"],
         "order": r,
@@ -295,11 +307,13 @@ def shor_factor(
     num_phase_bits: int | None = None,
     rng=None,
     postprocess_mode: str = "one_shot",
+    error_config=None,
 ) -> dict:
     """
     Repeat Shor attempts until factors are found or the attempt budget is exhausted.
     """
     postprocess_mode = validate_postprocess_mode(postprocess_mode)
+    error_config = validate_error_config(error_config)
     if max_attempts is None:
         max_attempts = default_max_attempts(postprocess_mode)
 
@@ -315,6 +329,7 @@ def shor_factor(
             num_phase_bits=num_phase_bits,
             rng=rng,
             postprocess_mode=postprocess_mode,
+            error_config=error_config,
         )
 
         if result["success"]:
@@ -325,6 +340,7 @@ def shor_factor(
     return {
         "N": N,
         "postprocess_mode": postprocess_mode,
+        "error_config": error_config.to_dict(),
         "success": False,
         "reason": "all attempts failed",
         "last_result": last_result,

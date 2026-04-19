@@ -24,6 +24,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from shor_one_qubit.errors import (
+    ErrorConfig,
+    MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+    measurement_bitflip_filename_suffix,
+    measurement_bitflip_label,
+    measurement_bitflip_title_suffix,
+    parse_measurement_bitflip_error_arg,
+)
 from shor_one_qubit.shor import (
     default_num_phase_bits,
     perfect_power_decomposition,
@@ -76,6 +84,7 @@ def simulate_for_attempt_budget(
     trials: int,
     rng: np.random.Generator,
     num_phase_bits: int | None = None,
+    error_config: ErrorConfig | None = None,
 ) -> AttemptSweepResult:
     """
     Estimate the success probability when allowing up to max_attempts one-shot runs.
@@ -86,6 +95,7 @@ def simulate_for_attempt_budget(
         raise ValueError("trials must be >= 1")
 
     successful_trials = 0
+    error_config = error_config or ErrorConfig()
 
     for _ in range(trials):
         result = shor_factor(
@@ -94,6 +104,7 @@ def simulate_for_attempt_budget(
             num_phase_bits=num_phase_bits,
             rng=rng,
             postprocess_mode="one_shot",
+            error_config=error_config,
         )
         if result["success"]:
             successful_trials += 1
@@ -111,6 +122,7 @@ def write_data_summary(
     results: list[AttemptSweepResult],
     trials_per_attempt_count: int,
     num_phase_bits: int,
+    error_config: ErrorConfig | None,
     seed: int | None,
 ) -> None:
     """
@@ -119,17 +131,20 @@ def write_data_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     seed_label = "random" if seed is None else str(seed)
+    error_label = measurement_bitflip_label(error_config)
 
     lines = [
         "One-Shot Shor Success-vs-Runs Data Summary",
         f"N = {N}",
         f"Phase-estimation bits = {num_phase_bits}",
+        f"Measurement bit-flip error = {error_label}",
         f"Trials per chosen run count = {trials_per_attempt_count}",
         f"Seed = {seed_label}",
         "",
         "Graph note:",
         "  Fixed odd-composite N",
         "  Each trial uses the top-level shor_factor flow with postprocess_mode = one_shot",
+        f"  Measurement bit-flip error: {error_label}",
         "  A fresh random coprime base a may be chosen internally for each one-shot run",
         "  Each plotted point corresponds to a chosen maximum number of allowed one-shot runs",
         f"  Maximum number of allowed one-shot runs swept from {results[0].num_attempts} to {results[-1].num_attempts}",
@@ -153,6 +168,7 @@ def plot_success_vs_attempts(
     N: int,
     results: list[AttemptSweepResult],
     num_phase_bits: int,
+    error_config: ErrorConfig | None,
     output_path: Path,
 ) -> None:
     """
@@ -176,7 +192,10 @@ def plot_success_vs_attempts(
 
     ax.set_xlabel("Maximum number of allowed one-shot runs")
     ax.set_ylabel("Empirical factorization success probability")
-    ax.set_title(f"One-Shot Shor Success vs Number of Runs for N = {N}")
+    ax.set_title(
+        "One-Shot Shor Success vs Number of Runs for N = "
+        f"{N}{measurement_bitflip_title_suffix(error_config)}"
+    )
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
     ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -186,7 +205,9 @@ def plot_success_vs_attempts(
     ax.text(
         0.98,
         0.02,
-        f"phase bits = {num_phase_bits}",
+        "phase bits = "
+        f"{num_phase_bits}\nmeasurement bit-flip error = "
+        f"{measurement_bitflip_label(error_config)}",
         transform=ax.transAxes,
         ha="right",
         va="bottom",
@@ -238,6 +259,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Optional master RNG seed for reproducible sampling",
     )
     parser.add_argument(
+        "--measurement-bitflip-error",
+        nargs="?",
+        const=MEASUREMENT_BITFLIP_SINGLE_TOKEN,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable measurement bit-flip errors. Use without a value for "
+            "exactly one random bit-flip per iterative phase-estimation run, "
+            "or provide P in [0,1] for independent per-detection bit-flips."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -251,6 +284,12 @@ def main() -> None:
 
     parser = build_argument_parser()
     args = parser.parse_args()
+    try:
+        error_config = parse_measurement_bitflip_error_arg(
+            args.measurement_bitflip_error
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     validate_target_number(args.N)
 
@@ -267,18 +306,20 @@ def main() -> None:
         num_phase_bits = args.bits
 
     if args.output is None:
+        filename_suffix = measurement_bitflip_filename_suffix(error_config)
         figure_output_path = (
             Path(__file__).resolve().parent
             / "figures"
-            / f"one_shot_success_vs_attempts_N{args.N}.png"
+            / f"one_shot_success_vs_attempts_N{args.N}{filename_suffix}.png"
         )
     else:
         figure_output_path = args.output
 
+    filename_suffix = measurement_bitflip_filename_suffix(error_config)
     data_output_path = (
         Path(__file__).resolve().parent
         / "data"
-        / f"one_shot_success_vs_attempts_summary_N{args.N}.txt"
+        / f"one_shot_success_vs_attempts_summary_N{args.N}{filename_suffix}.txt"
     )
 
     master_rng = np.random.default_rng(args.seed)
@@ -294,6 +335,7 @@ def main() -> None:
                 trials=args.trials_per_attempt_count,
                 rng=instance_rng,
                 num_phase_bits=num_phase_bits,
+                error_config=error_config,
             )
         )
 
@@ -301,6 +343,7 @@ def main() -> None:
         N=args.N,
         results=results,
         num_phase_bits=num_phase_bits,
+        error_config=error_config,
         output_path=figure_output_path,
     )
     write_data_summary(
@@ -309,6 +352,7 @@ def main() -> None:
         results=results,
         trials_per_attempt_count=args.trials_per_attempt_count,
         num_phase_bits=num_phase_bits,
+        error_config=error_config,
         seed=args.seed,
     )
 
@@ -317,6 +361,7 @@ def main() -> None:
     print(f"Saved data summary to: {data_output_path}")
     print(f"N = {args.N}")
     print(f"Phase-estimation bits = {num_phase_bits}")
+    print(f"Measurement bit-flip error: {measurement_bitflip_label(error_config)}")
     print(
         "Maximum number of allowed one-shot runs "
         f"swept from {args.min_attempts} to {args.max_attempts}"
