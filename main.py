@@ -3,8 +3,10 @@ import time
 import numpy as np
 
 from shor_one_qubit.errors import (
+    ErrorConfig,
     MEASUREMENT_BITFLIP_SINGLE_TOKEN,
     parse_measurement_bitflip_error_arg,
+    validate_error_config,
 )
 from shor_one_qubit.shor import shor_factor, shor_attempt
 
@@ -46,13 +48,43 @@ def main():
             "or provide P in [0,1] for independent per-detection bit-flips."
         ),
     )
+    parser.add_argument(
+        "--controlled-unitary-depolarizing-error",
+        type=float,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable trajectory depolarizing errors after each controlled-U block. "
+            "With probability P in [0,1], apply a random X/Y/Z to one random "
+            "work-register qubit."
+        ),
+    )
+    parser.add_argument(
+        "--controlled-unitary-per-qubit-depolarizing-error",
+        type=float,
+        default=None,
+        metavar="P",
+        help=(
+            "Enable trajectory depolarizing errors after each controlled-U block. "
+            "Each work-register qubit independently gets a random X/Y/Z error "
+            "with probability P in [0,1]."
+        ),
+    )
 
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
     try:
-        error_config = parse_measurement_bitflip_error_arg(
+        measurement_error_config = parse_measurement_bitflip_error_arg(
             args.measurement_bitflip_error
+        )
+        error_config = validate_error_config(
+            ErrorConfig(
+                measurement_bitflip=measurement_error_config.measurement_bitflip,
+                measurement_bitflip_probability=measurement_error_config.measurement_bitflip_probability,
+                controlled_unitary_depolarizing_probability=args.controlled_unitary_depolarizing_error,
+                controlled_unitary_per_qubit_depolarizing_probability=args.controlled_unitary_per_qubit_depolarizing_error,
+            )
         )
     except ValueError as exc:
         parser.error(str(exc))

@@ -2,6 +2,7 @@ import numpy as np
 
 from .errors import (
     apply_measurement_bitflip,
+    apply_controlled_unitary_depolarizing_error,
     choose_measurement_bitflip_mask,
     validate_error_config,
 )
@@ -41,14 +42,26 @@ def feedback_angle(bits, j):
     return -2.0 * np.pi * frac
 
 
-def one_iterative_pe_step(work_state, controlled_power_op, feedback=0.0, rng=None):
+def one_iterative_pe_step(
+    work_state,
+    controlled_power_op,
+    feedback=0.0,
+    rng=None,
+    error_config=None,
+):
     """
     Perform one single-control-qubit phase-estimation step.
     """
+    error_config = validate_error_config(error_config)
     psi = make_joint_state(work_state)
 
     psi = apply_control_gate(psi, H())
     psi = apply_controlled_work_operator(psi, controlled_power_op)
+    psi = apply_controlled_unitary_depolarizing_error(
+        psi,
+        error_config=error_config,
+        rng=rng,
+    )
 
     if feedback != 0.0:
         psi = apply_control_gate(psi, phase(feedback))
@@ -101,6 +114,7 @@ def iterative_phase_estimation(
             controlled_power_op=work_op,
             feedback=angle,
             rng=rng,
+            error_config=error_config,
         )
 
         bit = apply_measurement_bitflip(

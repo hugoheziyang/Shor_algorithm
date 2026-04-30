@@ -112,6 +112,85 @@ def naive_single_bit_recovery_baseline(
     )
 
 
+def classical_recovery_lower_bound(
+    num_bits: int,
+    error_probability: float,
+) -> float:
+    """
+    Guaranteed recovery probability from no raw errors plus a final-bit error.
+
+    A single measurement bit-flip on the last measured phase bit cannot
+    propagate into later feedback, so it is always recoverable by a single-bit
+    classical search.
+    """
+    if num_bits < 1:
+        raise ValueError("num_bits must be >= 1")
+    if not (0.0 <= error_probability <= 1.0):
+        raise ValueError("error_probability must satisfy 0 <= p <= 1")
+
+    p = float(error_probability)
+    return ((1.0 - p) ** num_bits) + (p * ((1.0 - p) ** (num_bits - 1)))
+
+
+def classical_recovery_first_order_upper_bound(
+    num_bits: int,
+    error_probability: float,
+) -> float:
+    """
+    First-order upper envelope where every one-error location is recoverable.
+
+    This is exact for a non-propagating independent bit-flip model. For the
+    propagating Kitaev feedback model it upper-bounds the zero-error plus
+    one-error sector, but it does not include possible recoverable multi-error
+    cancellations.
+    """
+    return naive_single_bit_recovery_baseline(num_bits, error_probability)
+
+
+def kitaev_single_error_recoverability_coefficient(num_bits: int) -> float:
+    """
+    Return the ideal-Kitaev first-order coefficient C_t.
+
+    C_t = 1 + sum_{k=2}^t prod_{j=1}^{k-1} cos^2(pi / 2^{j+1}).
+    The first term corresponds to an error on the final measured bit, whose
+    empty product is recoverable with probability one.
+    """
+    if num_bits < 1:
+        raise ValueError("num_bits must be >= 1")
+
+    coefficient = 1.0
+    product = 1.0
+    for k in range(2, num_bits + 1):
+        j = k - 1
+        product *= math.cos(math.pi / (2 ** (j + 1))) ** 2
+        coefficient += product
+
+    return coefficient
+
+
+def kitaev_first_order_recovery_estimate(
+    num_bits: int,
+    error_probability: float,
+) -> float:
+    """
+    First-order recovery estimate using the ideal-Kitaev C_t coefficient.
+
+    The retained sectors are no raw bit-flips and recoverable single raw
+    measurement bit-flips:
+        (1-p)^t + C_t p (1-p)^(t-1).
+    """
+    if num_bits < 1:
+        raise ValueError("num_bits must be >= 1")
+    if not (0.0 <= error_probability <= 1.0):
+        raise ValueError("error_probability must satisfy 0 <= p <= 1")
+
+    p = float(error_probability)
+    coefficient = kitaev_single_error_recoverability_coefficient(num_bits)
+    return ((1.0 - p) ** num_bits) + (
+        coefficient * p * ((1.0 - p) ** (num_bits - 1))
+    )
+
+
 def iterative_phase_estimation_with_bitflip_mask(
     initial_work_state: np.ndarray,
     controlled_power_factory,

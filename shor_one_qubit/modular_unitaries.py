@@ -1,5 +1,7 @@
-import numpy as np
+from functools import lru_cache
 from math import gcd
+
+import numpy as np
 
 
 def register_size(N: int) -> int:
@@ -50,6 +52,23 @@ def modmul_power_label(y: int, a: int, power: int, N: int) -> int:
     return modmul_label(y, a_eff, N)
 
 
+@lru_cache(maxsize=128)
+def modmul_permutation(a: int, N: int) -> np.ndarray:
+    """
+    Return the permutation array implementing U_a on work-register labels.
+
+    The returned array `perm` satisfies out[perm[y]] = psi[y].
+    """
+    validate_multiplier(a, N)
+    M = work_dim(N)
+
+    perm = np.arange(M, dtype=np.int64)
+    active = perm < N
+    perm[active] = (a * perm[active]) % N
+    perm.setflags(write=False)
+    return perm
+
+
 def apply_modmul_state(psi: np.ndarray, a: int, N: int) -> np.ndarray:
     """
     Apply U_a to a work-register state vector psi.
@@ -58,19 +77,15 @@ def apply_modmul_state(psi: np.ndarray, a: int, N: int) -> np.ndarray:
 
     |psi> = sum_y psi[y] |y> --> U_a |psi> = sum_y psi[y] |a y mod N>
     """
-    validate_multiplier(a, N)
-    M = work_dim(N)
+    perm = modmul_permutation(a, N)
+    M = perm.shape[0]
 
     psi = np.asarray(psi, dtype=complex)
     if psi.shape != (M,):
         raise ValueError(f"psi must have shape ({M},)")
 
-    out = np.zeros_like(psi)
-
-    for y in range(M):
-        y_new = modmul_label(y, a, N)
-        out[y_new] += psi[y]
-
+    out = np.empty_like(psi)
+    out[perm] = psi
     return out
 
 

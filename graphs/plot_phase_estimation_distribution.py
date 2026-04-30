@@ -277,7 +277,8 @@ def plot_phase_distribution(
     ax.set_ylabel("Empirical probability")
     ax.set_title(
         "Phase-Estimation Outcome Distribution for N = "
-        f"{N}, a = {a}{measurement_bitflip_title_suffix(error_config)}"
+        f"{N}, a = {a}, t = {num_phase_bits}"
+        f"{measurement_bitflip_title_suffix(error_config)}"
     )
     ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
     ax.xaxis.set_major_formatter(FormatStrFormatter("%.2f"))
@@ -386,7 +387,10 @@ def main() -> None:
         figure_output_path = (
             Path(__file__).resolve().parent
             / "figures"
-            / f"phase_estimation_distribution_N{args.N}_a{args.a}{filename_suffix}.png"
+            / (
+                f"phase_estimation_distribution_N{args.N}_a{args.a}"
+                f"_t{num_phase_bits}{filename_suffix}.png"
+            )
         )
     else:
         figure_output_path = args.output
@@ -395,7 +399,10 @@ def main() -> None:
     data_output_path = (
         Path(__file__).resolve().parent
         / "data"
-        / f"phase_estimation_distribution_summary_N{args.N}_a{args.a}{filename_suffix}.txt"
+        / (
+            f"phase_estimation_distribution_summary_N{args.N}_a{args.a}"
+            f"_t{num_phase_bits}{filename_suffix}.txt"
+        )
     )
 
     rng = np.random.default_rng(args.seed)

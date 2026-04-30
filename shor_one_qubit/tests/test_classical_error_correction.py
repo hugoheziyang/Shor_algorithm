@@ -2,8 +2,12 @@ import numpy as np
 
 from error_correction.classical_error_correction import (
     can_recover_clean_bits_by_single_flip,
+    classical_recovery_first_order_upper_bound,
+    classical_recovery_lower_bound,
     estimate_classical_recovery_probability,
     flip_bit,
+    kitaev_first_order_recovery_estimate,
+    kitaev_single_error_recoverability_coefficient,
     naive_single_bit_recovery_baseline,
     run_paired_phase_estimation_trial,
     single_bit_flip_candidates,
@@ -38,6 +42,35 @@ def test_naive_single_bit_recovery_baseline_matches_expected_values():
         naive_single_bit_recovery_baseline(3, 0.1),
         (0.9 ** 3) + (3 * 0.1 * (0.9 ** 2)),
     )
+
+
+def test_classical_recovery_lower_bound_counts_final_bit_error():
+    assert np.isclose(classical_recovery_lower_bound(4, 0.1), 0.9 ** 3)
+    assert np.isclose(classical_recovery_lower_bound(1, 0.5), 1.0)
+
+
+def test_classical_recovery_first_order_upper_bound_matches_baseline():
+    assert np.isclose(
+        classical_recovery_first_order_upper_bound(3, 0.1),
+        naive_single_bit_recovery_baseline(3, 0.1),
+    )
+
+
+def test_kitaev_single_error_recoverability_coefficient():
+    assert np.isclose(kitaev_single_error_recoverability_coefficient(1), 1.0)
+    assert np.isclose(kitaev_single_error_recoverability_coefficient(2), 1.5)
+    expected_t3 = 1.0 + 0.5 + (0.5 * (np.cos(np.pi / 8) ** 2))
+    assert np.isclose(kitaev_single_error_recoverability_coefficient(3), expected_t3)
+
+
+def test_kitaev_first_order_recovery_estimate_lies_between_first_order_bounds():
+    p = 0.1
+    num_bits = 5
+    lower_bound = classical_recovery_lower_bound(num_bits, p)
+    upper_bound = classical_recovery_first_order_upper_bound(num_bits, p)
+    estimate = kitaev_first_order_recovery_estimate(num_bits, p)
+
+    assert lower_bound <= estimate <= upper_bound
 
 
 def test_paired_phase_estimation_trial_matches_clean_run_when_p_is_zero():

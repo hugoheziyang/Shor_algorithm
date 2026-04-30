@@ -17,6 +17,7 @@ The code is written in plain NumPy and is intended for small, demo-scale integer
 - `shor_one_qubit/gates.py`: small 2x2 gate primitives.
 - `shor_one_qubit/classical_post.py`: phase-to-order recovery and factor extraction.
 - `shor_one_qubit/errors.py`: configurable simulator error models.
+- `error_correction/`: classical recovery and bit-string distance diagnostics.
 - `shor_one_qubit/tests/`: unit tests for all modules.
 - `graphs/`: graph scripts, generated figures/data, and graph-specific documentation in `graphs/README.md`.
 
@@ -54,6 +55,8 @@ CLI options:
 - `--attempts`: max attempts (used when `--a` is omitted). Default is `1` for `one_shot` and `10` for `rescue`.
 - `--postprocess`: classical post-processing mode, either `one_shot` (default, hardware-like) or `rescue`.
 - `--measurement-bitflip-error [P]`: use without a value for exactly one random measurement bit-flip per iterative phase-estimation run, or provide `P` in `[0, 1]` for independent per-detection bit-flips.
+- `--controlled-unitary-depolarizing-error P`: after each controlled-$U$ block, apply a block-level trajectory depolarizing error with probability `P` by choosing one random work-register qubit and one random Pauli from `X`, `Y`, `Z`.
+- `--controlled-unitary-per-qubit-depolarizing-error P`: after each controlled-$U$ block, independently apply a trajectory depolarizing error to each work-register qubit with probability `P`.
 - `--seed`: optional RNG seed for reproducibility. If omitted, fresh randomness is used.
 
 ## Running Tests
@@ -111,5 +114,5 @@ final_work_state: <state vector omitted>
   - hardware-like one-shot continued-fraction helpers, which scan bounded convergents and accept the first one already verified as the order;
   - simulator-side rescue helpers, which additionally search multiples / reduce exponents to recover the true order more aggressively.
 - `shor.py` and `main.py` now default to the hardware-like `one_shot` post-processing mode, while still exposing the older `rescue` mode for comparison.
-- `errors.py` now provides the first pluggable error model: either a single random measurement bit-flip per iterative phase-estimation run, or independent per-detection measurement bit-flips with configurable probability.
-- `config.py` currently unused. Future modifications to include usage in `main.py` and future files.
+- `errors.py` provides pluggable trajectory error models: measurement bit-flips, block-level controlled-unitary depolarizing Pauli errors, and per-work-qubit controlled-unitary depolarizing Pauli errors.
+- `error_correction/code_distance.py` provides paired clean/noisy Kitaev phase-estimation diagnostics using Hamming distance and decimal phase distance between the measured phase-bit strings.
