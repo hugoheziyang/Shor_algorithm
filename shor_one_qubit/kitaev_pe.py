@@ -1,6 +1,6 @@
 import numpy as np
 
-from .errors import (
+from shor_common.errors import (
     apply_measurement_bitflip,
     apply_controlled_unitary_depolarizing_error,
     choose_measurement_bitflip_mask,

@@ -5,11 +5,13 @@ from .classical_error_correction import (
     classical_recovery_first_order_upper_bound,
     classical_recovery_lower_bound,
     estimate_classical_recovery_probability,
+    estimate_standard_classical_recovery_probability,
     flip_bit,
     kitaev_first_order_recovery_estimate,
     kitaev_single_error_recoverability_coefficient,
     naive_single_bit_recovery_baseline,
     run_paired_phase_estimation_trial,
+    run_paired_standard_phase_estimation_trial,
     single_bit_flip_candidates,
     validate_phase_estimation_instance,
 )

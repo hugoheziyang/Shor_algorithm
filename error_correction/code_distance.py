@@ -5,21 +5,21 @@ from fractions import Fraction
 
 import numpy as np
 
-from shor_one_qubit.errors import (
+from shor_common.errors import (
     ErrorConfig,
     apply_controlled_unitary_depolarizing_error,
     apply_measurement_bitflip,
     choose_measurement_bitflip_mask,
     validate_error_config,
 )
-from shor_one_qubit.gates import H, phase
-from shor_one_qubit.kitaev_pe import feedback_angle
-from shor_one_qubit.modular_unitaries import work_dim
-from shor_one_qubit.shor import (
+from shor_common.modular_unitaries import work_dim
+from shor_common.shor_utils import (
     default_num_phase_bits,
     make_basis_state,
     make_controlled_power_factory,
 )
+from shor_one_qubit.gates import H, phase
+from shor_one_qubit.kitaev_pe import feedback_angle
 from shor_one_qubit.state_ops import (
     apply_control_gate,
     apply_controlled_work_operator,
@@ -263,6 +263,7 @@ def run_phase_estimation_hamming_distance_trial(
     a: int,
     num_phase_bits: int | None = None,
     error_config: ErrorConfig | None = None,
+    measurement_bitflip_mask: list[bool] | None = None,
     rng=None,
 ) -> PhaseEstimationHammingDistanceTrial:
     """
@@ -283,11 +284,14 @@ def run_phase_estimation_hamming_distance_trial(
     measurement_error_seed = int(rng.integers(0, 2 ** 63 - 1))
     trajectory_error_seed = int(rng.integers(0, 2 ** 63 - 1))
 
-    measurement_bitflip_mask = choose_measurement_bitflip_mask(
-        num_phase_bits,
-        error_config=error_config,
-        rng=np.random.default_rng(measurement_error_seed),
-    )
+    if measurement_bitflip_mask is None:
+        measurement_bitflip_mask = choose_measurement_bitflip_mask(
+            num_phase_bits,
+            error_config=error_config,
+            rng=np.random.default_rng(measurement_error_seed),
+        )
+    elif len(measurement_bitflip_mask) != num_phase_bits:
+        raise ValueError("measurement_bitflip_mask must have length num_phase_bits")
 
     initial_work_state = make_basis_state(1, work_dim(N))
     controlled_power_factory = make_controlled_power_factory(a, N)

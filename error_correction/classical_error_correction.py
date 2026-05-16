@@ -5,19 +5,29 @@ import math
 
 import numpy as np
 
-from shor_one_qubit.errors import (
+from shor_common.errors import (
     ErrorConfig,
     apply_measurement_bitflip,
     choose_measurement_bitflip_mask,
     validate_error_config,
 )
-from shor_one_qubit.kitaev_pe import feedback_angle, one_iterative_pe_step
-from shor_one_qubit.modular_unitaries import work_dim
-from shor_one_qubit.shor import (
+from shor_common.modular_unitaries import work_dim
+from shor_common.shor_utils import (
     default_num_phase_bits,
     make_basis_state,
     make_controlled_power_factory,
 )
+from shor_one_qubit.kitaev_pe import feedback_angle, one_iterative_pe_step
+from shor_standard.analytic_sampling import (
+    multiplicative_order,
+    sample_standard_phase_bits_from_order,
+)
+from shor_standard.backends import (
+    ANALYTIC_STANDARD_BACKEND,
+    STATEVECTOR_STANDARD_BACKEND,
+    validate_standard_backend,
+)
+from shor_standard.phase_estimation import standard_phase_estimation_with_bitflip_mask
 
 
 @dataclass(frozen=True)
@@ -314,6 +324,99 @@ def run_paired_phase_estimation_trial(
     )
 
 
+def run_paired_standard_phase_estimation_trial(
+    N: int,
+    a: int,
+    num_control_qubits: int | None = None,
+    error_probability: float = 0.0,
+    rng=None,
+    standard_backend: str = STATEVECTOR_STANDARD_BACKEND,
+    analytic_window: int = 100,
+    order: int | None = None,
+) -> PairedPhaseEstimationTrial:
+    """
+    Run one paired clean/noisy standard PE trial for the same fixed (N, a).
+    """
+    validate_phase_estimation_instance(N, a)
+    standard_backend = validate_standard_backend(standard_backend)
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if num_control_qubits is None:
+        num_control_qubits = default_num_phase_bits(N)
+    if num_control_qubits < 1:
+        raise ValueError("num_control_qubits must be >= 1")
+
+    error_config = validate_error_config(
+        ErrorConfig(
+            measurement_bitflip=True,
+            measurement_bitflip_probability=error_probability,
+        )
+    )
+
+    measurement_seed = int(rng.integers(0, 2 ** 63 - 1))
+    error_seed = int(rng.integers(0, 2 ** 63 - 1))
+
+    measurement_rng_clean = np.random.default_rng(measurement_seed)
+    measurement_rng_noisy = np.random.default_rng(measurement_seed)
+    error_rng = np.random.default_rng(error_seed)
+
+    measurement_bitflip_mask = choose_measurement_bitflip_mask(
+        num_control_qubits,
+        error_config=error_config,
+        rng=error_rng,
+    )
+
+    if standard_backend == STATEVECTOR_STANDARD_BACKEND:
+        initial_work_state = make_basis_state(1, work_dim(N))
+        controlled_power_factory = make_controlled_power_factory(a, N)
+
+        clean_bits, clean_phase_estimate, _ = standard_phase_estimation_with_bitflip_mask(
+            initial_work_state=initial_work_state,
+            controlled_power_factory=controlled_power_factory,
+            num_control_qubits=num_control_qubits,
+            measurement_bitflip_mask=[False] * num_control_qubits,
+            measurement_rng=measurement_rng_clean,
+        )
+
+        noisy_bits, noisy_phase_estimate, _ = standard_phase_estimation_with_bitflip_mask(
+            initial_work_state=initial_work_state,
+            controlled_power_factory=controlled_power_factory,
+            num_control_qubits=num_control_qubits,
+            measurement_bitflip_mask=measurement_bitflip_mask,
+            measurement_rng=measurement_rng_noisy,
+        )
+    else:
+        if order is None:
+            order = multiplicative_order(a, N)
+
+        clean_bits, clean_phase_estimate, _, _ = sample_standard_phase_bits_from_order(
+            order=order,
+            num_control_qubits=num_control_qubits,
+            rng=measurement_rng_clean,
+            window=analytic_window,
+            measurement_bitflip_mask=[False] * num_control_qubits,
+        )
+
+        noisy_bits, noisy_phase_estimate, _, _ = sample_standard_phase_bits_from_order(
+            order=order,
+            num_control_qubits=num_control_qubits,
+            rng=measurement_rng_noisy,
+            window=analytic_window,
+            measurement_bitflip_mask=measurement_bitflip_mask,
+        )
+
+    return PairedPhaseEstimationTrial(
+        clean_bits=clean_bits,
+        noisy_bits=noisy_bits,
+        clean_phase_estimate=clean_phase_estimate,
+        noisy_phase_estimate=noisy_phase_estimate,
+        measurement_bitflip_mask=measurement_bitflip_mask,
+        recovered=can_recover_clean_bits_by_single_flip(noisy_bits, clean_bits),
+    )
+
+
 def estimate_classical_recovery_probability(
     N: int,
     a: int,
@@ -355,6 +458,63 @@ def estimate_classical_recovery_probability(
         trials=trials,
         naive_baseline_probability=naive_single_bit_recovery_baseline(
             num_phase_bits,
+            error_probability,
+        ),
+    )
+
+
+def estimate_standard_classical_recovery_probability(
+    N: int,
+    a: int,
+    num_control_qubits: int | None,
+    error_probability: float,
+    trials: int,
+    rng=None,
+    standard_backend: str = STATEVECTOR_STANDARD_BACKEND,
+    analytic_window: int = 100,
+) -> RecoveryProbabilityEstimate:
+    """
+    Estimate empirical single-bit recovery probability for standard PE.
+    """
+    standard_backend = validate_standard_backend(standard_backend)
+    if trials < 1:
+        raise ValueError("trials must be >= 1")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if num_control_qubits is None:
+        num_control_qubits = default_num_phase_bits(N)
+    if num_control_qubits < 1:
+        raise ValueError("num_control_qubits must be >= 1")
+
+    successful_trials = 0
+    order = (
+        multiplicative_order(a, N)
+        if standard_backend == ANALYTIC_STANDARD_BACKEND
+        else None
+    )
+
+    for _ in range(trials):
+        trial = run_paired_standard_phase_estimation_trial(
+            N=N,
+            a=a,
+            num_control_qubits=num_control_qubits,
+            error_probability=error_probability,
+            rng=rng,
+            standard_backend=standard_backend,
+            analytic_window=analytic_window,
+            order=order,
+        )
+        if trial.recovered:
+            successful_trials += 1
+
+    return RecoveryProbabilityEstimate(
+        error_probability=error_probability,
+        successful_trials=successful_trials,
+        trials=trials,
+        naive_baseline_probability=naive_single_bit_recovery_baseline(
+            num_control_qubits,
             error_probability,
         ),
     )

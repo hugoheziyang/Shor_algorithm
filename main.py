@@ -2,7 +2,7 @@ import argparse
 import time
 import numpy as np
 
-from shor_one_qubit.errors import (
+from shor_common.errors import (
     ErrorConfig,
     MEASUREMENT_BITFLIP_SINGLE_TOKEN,
     parse_measurement_bitflip_error_arg,
