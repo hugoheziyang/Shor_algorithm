@@ -107,14 +107,26 @@ def default_num_phase_bits(N: int) -> int:
     return (2 * L) + 1
 
 
-def make_controlled_power_factory(a: int, N: int):
+def make_controlled_power_factory(
+    a: int,
+    N: int,
+    num_work_qubits: int | None = None,
+    padding_phase_radians: float = 0.0,
+):
     """
     Return a factory such that factory(power) gives a callable implementing
     U_a^power on the work-register state.
     """
     def factory(power: int):
         def work_op(work_state: np.ndarray) -> np.ndarray:
-            return apply_modmul_power_state(work_state, a=a, power=power, N=N)
+            return apply_modmul_power_state(
+                work_state,
+                a=a,
+                power=power,
+                N=N,
+                num_work_qubits=num_work_qubits,
+                padding_phase_radians=padding_phase_radians,
+            )
         return work_op
 
     return factory

@@ -180,3 +180,38 @@ def test_standard_phase_estimation_applies_depolarizing_error_after_each_block(
     assert bits == [0, 0, 0]
     assert np.isclose(phase_estimate, 0.0)
     np.testing.assert_allclose(final_work_state, initial_work_state)
+
+
+def test_standard_phase_estimation_filters_depolarizing_error_by_phase_bit(
+    monkeypatch,
+):
+    initial_work_state = np.array([1.0 + 0.0j])
+    calls = []
+
+    def tracking_depolarizing_error(psi, error_config=None, rng=None):
+        calls.append(error_config)
+        return psi
+
+    monkeypatch.setattr(
+        phase_estimation_module,
+        "apply_controlled_unitary_depolarizing_error",
+        tracking_depolarizing_error,
+    )
+
+    error_config = ErrorConfig(
+        controlled_unitary_depolarizing_probability=0.25,
+        controlled_unitary_depolarizing_allowed_phase_bits=(1, 3),
+    )
+    bits, phase_estimate, final_work_state = standard_phase_estimation(
+        initial_work_state=initial_work_state,
+        controlled_power_factory=make_phase_operator_factory(0.0),
+        num_control_qubits=3,
+        rng=np.random.default_rng(123),
+        error_config=error_config,
+    )
+
+    assert len(calls) == 2
+    assert all(call == error_config for call in calls)
+    assert bits == [0, 0, 0]
+    assert np.isclose(phase_estimate, 0.0)
+    np.testing.assert_allclose(final_work_state, initial_work_state)

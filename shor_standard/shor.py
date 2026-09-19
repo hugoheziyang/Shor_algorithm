@@ -4,7 +4,12 @@ import numpy as np
 
 from shor_common.classical_post import shor_factors_from_order
 from shor_common.errors import choose_measurement_bitflip_mask, validate_error_config
-from shor_common.modular_unitaries import register_size, work_dim
+from shor_common.modular_unitaries import (
+    register_size,
+    validate_padding_phase_radians,
+    validate_work_register_size,
+    work_dim,
+)
 from shor_common.shor_utils import (
     choose_random_a,
     default_max_attempts,
@@ -46,6 +51,8 @@ def shor_order_finding_attempt(
     error_config=None,
     standard_backend: str = STATEVECTOR_STANDARD_BACKEND,
     analytic_window: int = 100,
+    num_work_qubits: int | None = None,
+    padding_phase_radians: float = 0.0,
 ) -> dict:
     """
     Run one textbook phase-estimation attempt for U_a and recover the order.
@@ -53,14 +60,23 @@ def shor_order_finding_attempt(
     postprocess_mode = validate_postprocess_mode(postprocess_mode)
     standard_backend = validate_standard_backend(standard_backend)
     error_config = validate_error_config(error_config)
+    padding_phase_radians = validate_padding_phase_radians(
+        padding_phase_radians
+    )
     if rng is None:
         rng = np.random.default_rng()
 
     result_metadata = {}
     if standard_backend == STATEVECTOR_STANDARD_BACKEND:
-        M = work_dim(N)
+        effective_num_work_qubits = validate_work_register_size(N, num_work_qubits)
+        M = work_dim(N, num_work_qubits=effective_num_work_qubits)
         initial_work_state = make_basis_state(1, M)
-        controlled_power_factory = make_controlled_power_factory(a, N)
+        controlled_power_factory = make_controlled_power_factory(
+            a,
+            N,
+            num_work_qubits=effective_num_work_qubits,
+            padding_phase_radians=padding_phase_radians,
+        )
 
         bits, phase_estimate, final_work_state = standard_phase_estimation(
             initial_work_state=initial_work_state,
@@ -70,6 +86,16 @@ def shor_order_finding_attempt(
             error_config=error_config,
         )
     else:
+        if padding_phase_radians != 0.0:
+            raise ValueError(
+                "padding_phase_radians is only supported by the standard "
+                "statevector backend"
+            )
+        if num_work_qubits is not None:
+            raise ValueError(
+                "num_work_qubits is only supported by the standard statevector backend"
+            )
+        effective_num_work_qubits = register_size(N)
         error_config = validate_analytic_error_config(error_config)
         true_order = multiplicative_order(a, N)
         measurement_bitflip_mask = choose_measurement_bitflip_mask(
@@ -101,7 +127,8 @@ def shor_order_finding_attempt(
         "standard_backend": standard_backend,
         "a": a,
         "num_control_qubits": num_control_qubits,
-        "num_work_qubits": register_size(N),
+        "num_work_qubits": effective_num_work_qubits,
+        "padding_phase_radians": padding_phase_radians,
         "bits": bits,
         "phase_estimate": phase_estimate,
         "order": order,
@@ -122,6 +149,7 @@ def shor_attempt(
     error_config=None,
     standard_backend: str = STATEVECTOR_STANDARD_BACKEND,
     analytic_window: int = 100,
+    num_work_qubits: int | None = None,
 ) -> dict:
     """
     Perform one top-level standard Shor attempt.
@@ -194,6 +222,7 @@ def shor_attempt(
         error_config=error_config,
         standard_backend=standard_backend,
         analytic_window=analytic_window,
+        num_work_qubits=num_work_qubits,
     )
 
     r = order_result["order"]
@@ -206,7 +235,7 @@ def shor_attempt(
         "N": N,
         "a": a,
         "num_control_qubits": num_control_qubits,
-        "num_work_qubits": register_size(N),
+        "num_work_qubits": order_result["num_work_qubits"],
         "postprocess_mode": postprocess_mode,
         "error_config": error_config.to_dict(),
         "bits": order_result["bits"],
@@ -240,6 +269,7 @@ def shor_factor(
     error_config=None,
     standard_backend: str = STATEVECTOR_STANDARD_BACKEND,
     analytic_window: int = 100,
+    num_work_qubits: int | None = None,
 ) -> dict:
     """
     Repeat standard Shor attempts until factors are found or attempts run out.
@@ -266,6 +296,7 @@ def shor_factor(
             error_config=error_config,
             standard_backend=standard_backend,
             analytic_window=analytic_window,
+            num_work_qubits=num_work_qubits,
         )
 
         if result["success"]:

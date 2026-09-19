@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from graphs.statevector_precision import warn_if_statevector_phase_bits_below_default
 from shor_common.errors import (
     ErrorConfig,
     MEASUREMENT_BITFLIP_SINGLE_TOKEN,
@@ -470,6 +471,12 @@ def main() -> None:
         num_phase_bits = default_num_phase_bits(args.N)
     else:
         num_phase_bits = args.bits
+    warn_if_statevector_phase_bits_below_default(
+        algorithms=algorithms,
+        standard_backend=args.standard_backend,
+        num_phase_bits=num_phase_bits,
+        instances_or_N_values=[args.N],
+    )
 
     if args.output is None:
         filename_suffix = measurement_bitflip_filename_suffix(error_config)

@@ -29,7 +29,7 @@ from graphs.measurement_error.plot_order_recovery_success_vs_order import (
     validate_statevector_budget,
 )
 from shor_common.errors import ErrorConfig
-from shor_standard.backends import ANALYTIC_STANDARD_BACKEND
+from shor_standard.backends import ANALYTIC_STANDARD_BACKEND, STATEVECTOR_STANDARD_BACKEND
 
 
 def test_max_modulus_for_phase_bits_matches_two_L_plus_one_rule():
@@ -188,6 +188,23 @@ def test_load_instances_file_applies_order_filter_before_bit_budget_check(tmp_pa
     assert [(instance.N, instance.a, instance.true_order) for instance in instances] == [
         (15, 2, 4),
     ]
+
+
+def test_load_instances_file_can_relax_default_bits_for_statevector_warning_path(tmp_path):
+    instances_file = tmp_path / "instances.json"
+    instances_file.write_text(
+        '[{"N": 21, "a": 11}]',
+        encoding="utf-8",
+    )
+
+    instances = load_order_recovery_instances_from_file(
+        instances_file,
+        num_phase_bits=9,
+        enforce_default_phase_bits=False,
+    )
+
+    assert instances[0].N == 21
+    assert instances[0].default_phase_bits == 11
 
 
 def test_instances_file_filename_segment_uses_file_stem():
@@ -368,5 +385,16 @@ def test_statevector_budget_recommends_analytic_backend_for_large_sweeps():
             standard_backend="statevector",
             num_phase_bits=29,
             max_N=1000,
+            max_statevector_amplitudes=8_000_000,
+        )
+
+
+def test_statevector_budget_warns_when_bits_below_default():
+    with pytest.warns(RuntimeWarning, match="below the default"):
+        validate_statevector_budget(
+            algorithms=[STANDARD_ALGORITHM],
+            standard_backend=STATEVECTOR_STANDARD_BACKEND,
+            num_phase_bits=9,
+            max_N=21,
             max_statevector_amplitudes=8_000_000,
         )

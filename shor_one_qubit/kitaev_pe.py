@@ -4,6 +4,7 @@ from shor_common.errors import (
     apply_measurement_bitflip,
     apply_controlled_unitary_depolarizing_error,
     choose_measurement_bitflip_mask,
+    controlled_unitary_depolarizing_allowed_for_phase_bit,
     validate_error_config,
 )
 from .gates import H, phase
@@ -48,6 +49,7 @@ def one_iterative_pe_step(
     feedback=0.0,
     rng=None,
     error_config=None,
+    phase_bit_number: int | None = None,
 ):
     """
     Perform one single-control-qubit phase-estimation step.
@@ -57,11 +59,18 @@ def one_iterative_pe_step(
 
     psi = apply_control_gate(psi, H())
     psi = apply_controlled_work_operator(psi, controlled_power_op)
-    psi = apply_controlled_unitary_depolarizing_error(
-        psi,
-        error_config=error_config,
-        rng=rng,
-    )
+    if (
+        phase_bit_number is None
+        or controlled_unitary_depolarizing_allowed_for_phase_bit(
+            error_config,
+            phase_bit_number,
+        )
+    ):
+        psi = apply_controlled_unitary_depolarizing_error(
+            psi,
+            error_config=error_config,
+            rng=rng,
+        )
 
     if feedback != 0.0:
         psi = apply_control_gate(psi, phase(feedback))
@@ -115,6 +124,7 @@ def iterative_phase_estimation(
             feedback=angle,
             rng=rng,
             error_config=error_config,
+            phase_bit_number=j,
         )
 
         bit = apply_measurement_bitflip(

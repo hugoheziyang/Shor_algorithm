@@ -75,7 +75,21 @@ def test_shor_order_finding_attempt_returns_expected_keys():
     assert "phase_estimate" in result
     assert "order" in result
     assert result["postprocess_mode"] == "one_shot"
+    assert result["num_work_qubits"] == 4
     assert "final_work_state" in result
+
+
+def test_shor_order_finding_attempt_accepts_fixed_work_register_size():
+    result = shor_order_finding_attempt(
+        N=15,
+        a=2,
+        num_phase_bits=8,
+        num_work_qubits=5,
+        rng=np.random.default_rng(1234),
+    )
+
+    assert result["num_work_qubits"] == 5
+    assert result["final_work_state"].shape == (32,)
 
 
 def test_shor_order_finding_attempt_dispatches_one_shot(monkeypatch):
@@ -195,6 +209,7 @@ def test_shor_factor_one_shot_defaults_to_single_attempt(monkeypatch):
         rng=None,
         postprocess_mode="one_shot",
         error_config=None,
+        num_work_qubits=None,
     ):
         calls.append((postprocess_mode, error_config))
         return {

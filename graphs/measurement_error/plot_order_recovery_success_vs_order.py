@@ -29,6 +29,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from graphs.statevector_precision import (
+    standard_statevector_allows_subdefault_phase_bits,
+    warn_if_statevector_phase_bits_below_default,
+)
 from shor_common.errors import (
     ErrorConfig,
     MEASUREMENT_BITFLIP_SINGLE_TOKEN,
@@ -443,11 +447,22 @@ def instances_file_filename_segment(instances_file: Path | None) -> str:
     return f"instances_{safe_filename_token(instances_file.stem)}_"
 
 
-def instance_from_pair(N: int, a: int, num_phase_bits: int) -> OrderRecoveryInstance:
+def instance_from_pair(
+    N: int,
+    a: int,
+    num_phase_bits: int,
+    enforce_default_phase_bits: bool = True,
+) -> OrderRecoveryInstance:
     """
     Validate one configured (N, a) pair and compute its true order.
     """
-    validate_modulus_for_fixed_bits(N, num_phase_bits)
+    if enforce_default_phase_bits:
+        validate_modulus_for_fixed_bits(N, num_phase_bits)
+    else:
+        if not is_odd_composite(N):
+            raise ValueError("N must be an odd composite integer >= 9")
+        if perfect_power_decomposition(N) is not None:
+            raise ValueError("perfect-power moduli are excluded")
     if not (2 <= a <= N - 2):
         raise ValueError(f"a must satisfy 2 <= a <= N - 2 for N={N}")
     if math.gcd(a, N) != 1:
@@ -467,6 +482,7 @@ def load_order_recovery_instances_from_file(
     num_phase_bits: int,
     min_order: int | None = None,
     max_order: int | None = None,
+    enforce_default_phase_bits: bool = True,
 ) -> list[OrderRecoveryInstance]:
     """
     Load configured representative (N, a) pairs from a JSON file.
@@ -510,7 +526,12 @@ def load_order_recovery_instances_from_file(
             if max_order is not None and expected_order > max_order:
                 continue
 
-        instance = instance_from_pair(N=N, a=a, num_phase_bits=num_phase_bits)
+        instance = instance_from_pair(
+            N=N,
+            a=a,
+            num_phase_bits=num_phase_bits,
+            enforce_default_phase_bits=enforce_default_phase_bits,
+        )
         if expected_order is not None:
             if expected_order != instance.true_order:
                 raise ValueError(
@@ -779,6 +800,13 @@ def validate_statevector_budget(
     """
     Guard against accidental huge standard statevector allocations.
     """
+    warn_if_statevector_phase_bits_below_default(
+        algorithms=algorithms,
+        standard_backend=standard_backend,
+        num_phase_bits=num_phase_bits,
+        instances_or_N_values=[max_N],
+        stacklevel=3,
+    )
     if STANDARD_ALGORITHM not in algorithms:
         return
     if standard_backend != STATEVECTOR_STANDARD_BACKEND:
@@ -1354,6 +1382,10 @@ def main() -> None:
                 num_phase_bits=args.bits,
                 min_order=args.min_order,
                 max_order=args.max_order,
+                enforce_default_phase_bits=not standard_statevector_allows_subdefault_phase_bits(
+                    algorithms,
+                    args.standard_backend,
+                ),
             )
             min_N = min(instance.N for instance in instances)
             max_N = max(instance.N for instance in instances)

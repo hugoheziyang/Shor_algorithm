@@ -33,6 +33,7 @@ from error_correction.classical_error_correction import (
     kitaev_single_error_recoverability_coefficient,
     validate_phase_estimation_instance,
 )
+from graphs.statevector_precision import warn_if_statevector_phase_bits_below_default
 from shor_common.shor_utils import default_num_phase_bits
 from shor_standard.backends import STANDARD_BACKEND_CHOICES, STATEVECTOR_STANDARD_BACKEND
 
@@ -1092,6 +1093,13 @@ def main() -> None:
 
     if args.bits is not None and args.bits < 1:
         raise ValueError("bits must be >= 1")
+    if args.bits is not None:
+        warn_if_statevector_phase_bits_below_default(
+            algorithms=algorithms,
+            standard_backend=args.standard_backend,
+            num_phase_bits=args.bits,
+            instances_or_N_values=[instance.N for instance in instances],
+        )
 
     master_rng = np.random.default_rng(args.seed)
     sweeps = []

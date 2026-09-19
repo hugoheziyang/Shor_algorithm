@@ -42,6 +42,7 @@ from graphs.measurement_error.plot_order_recovery_success_vs_order import (
     load_order_recovery_instances_from_file,
     normalize_algorithms,
     simulate_order_recovery_for_instance,
+    standard_statevector_allows_subdefault_phase_bits,
     standard_backend_filename_segment,
     validate_statevector_budget,
 )
@@ -519,6 +520,10 @@ def main() -> None:
             num_phase_bits=args.bits,
             min_order=args.min_order,
             max_order=args.max_order,
+            enforce_default_phase_bits=not standard_statevector_allows_subdefault_phase_bits(
+                algorithms,
+                args.standard_backend,
+            ),
         )
         max_N = max(instance.N for instance in instances)
         validate_statevector_budget(

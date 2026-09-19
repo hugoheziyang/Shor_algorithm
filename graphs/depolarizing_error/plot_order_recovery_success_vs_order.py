@@ -24,13 +24,26 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from graphs.statevector_precision import warn_if_statevector_phase_bits_below_default
+from graphs.depolarizing_error.work_register import (
+    add_work_register_arguments,
+    effective_work_qubits_for_N,
+    resolve_work_qubits,
+    work_register_display_label,
+    work_register_filename_segment,
+)
 from graphs.depolarizing_error.plot_hamming_distance_vs_error_probability import (
     BLOCK_DEPOLARIZING_MODEL,
     PER_QUBIT_DEPOLARIZING_MODEL,
+    add_depolarizing_region_argument,
+    depolarizing_region_display_label,
+    depolarizing_region_filename_segment,
+    depolarizing_region_phase_bits,
     error_config_for_model,
     error_model_display_label,
     normalize_error_model,
 )
+from shor_common.errors import ControlledUnitaryDepolarizingRangeSpec
 from shor_one_qubit.shor import shor_order_finding_attempt as kitaev_order_attempt
 from shor_standard.backends import (
     ANALYTIC_STANDARD_BACKEND,
@@ -46,8 +59,8 @@ STANDARD_ALGORITHM = "standard"
 ALGORITHM_CHOICES = (KITAEV_ALGORITHM, STANDARD_ALGORITHM)
 
 DEFAULT_INSTANCES_FILE = REPO_ROOT / "graphs" / "config" / "order_recovery_instances.json"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "graphs" / "figures"
-DEFAULT_DATA_DIR = REPO_ROOT / "graphs" / "data"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "figures"
+DEFAULT_DATA_DIR = Path(__file__).resolve().parent / "data"
 DEFAULT_ERROR_PROBABILITIES = [0.0, 0.01, 0.05, 0.1]
 
 
@@ -67,6 +80,7 @@ class OrderRecoveryResult:
     successful_trials: int
     trials: int
     num_phase_bits: int
+    num_work_qubits: int | None = None
 
     @property
     def success_probability(self) -> float:
@@ -146,13 +160,24 @@ def simulate_order_recovery_for_instance(
     rng: np.random.Generator,
     num_phase_bits: int,
     standard_backend: str,
+    num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> OrderRecoveryResult:
     if trials < 1:
         raise ValueError("trials must be >= 1")
     if num_phase_bits < 1:
         raise ValueError("num_phase_bits must be >= 1")
 
-    error_config = error_config_for_model(error_model, error_probability)
+    allowed_phase_bits = depolarizing_region_phase_bits(
+        num_phase_bits=num_phase_bits,
+        true_order=instance.true_order,
+        depolarizing_region=depolarizing_region,
+    )
+    error_config = error_config_for_model(
+        error_model,
+        error_probability,
+        allowed_phase_bits=allowed_phase_bits,
+    )
     successful_trials = 0
 
     for _ in range(trials):
@@ -164,6 +189,7 @@ def simulate_order_recovery_for_instance(
                 rng=rng,
                 postprocess_mode="one_shot",
                 error_config=error_config,
+                num_work_qubits=num_work_qubits,
             )
         elif algorithm == STANDARD_ALGORITHM:
             result = standard_order_attempt(
@@ -174,6 +200,7 @@ def simulate_order_recovery_for_instance(
                 postprocess_mode="one_shot",
                 error_config=error_config,
                 standard_backend=standard_backend,
+                num_work_qubits=num_work_qubits,
             )
         else:
             raise ValueError("unknown algorithm")
@@ -189,6 +216,7 @@ def simulate_order_recovery_for_instance(
         successful_trials=successful_trials,
         trials=trials,
         num_phase_bits=num_phase_bits,
+        num_work_qubits=effective_work_qubits_for_N(instance.N, num_work_qubits),
     )
 
 
@@ -201,6 +229,8 @@ def simulate_order_recovery(
     num_phase_bits: int,
     master_rng: np.random.Generator,
     standard_backend: str,
+    num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> list[OrderRecoveryResult]:
     results = []
     for probability in error_probabilities:
@@ -217,6 +247,8 @@ def simulate_order_recovery(
                         rng=rng,
                         num_phase_bits=num_phase_bits,
                         standard_backend=standard_backend,
+                        num_work_qubits=num_work_qubits,
+                        depolarizing_region=depolarizing_region,
                     )
                 )
     return results
@@ -229,6 +261,7 @@ def algorithm_label(algorithm: str) -> str:
 def plot_order_recovery_success(
     results: list[OrderRecoveryResult],
     output_path: Path,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -264,7 +297,11 @@ def plot_order_recovery_success(
             )
 
     [first] = {result.error_model for result in results}
-    ax.set_title(f"Order recovery under {error_model_display_label(first)}")
+    ax.set_title(
+        "Order recovery under "
+        f"{error_model_display_label(first)} "
+        f"({depolarizing_region_display_label(depolarizing_region)})"
+    )
     ax.set_xlabel("True order r")
     ax.set_ylabel("One-shot order recovery probability")
     ax.set_ylim(-0.03, 1.03)
@@ -275,14 +312,24 @@ def plot_order_recovery_success(
     plt.close(fig)
 
 
-def write_summary(results: list[OrderRecoveryResult], output_path: Path) -> None:
+def write_summary(
+    results: list[OrderRecoveryResult],
+    output_path: Path,
+    fixed_num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "Depolarizing error order-recovery success summary",
         f"Error model = {error_model_display_label(results[0].error_model)}",
+        f"Work register = {work_register_display_label(fixed_num_work_qubits)}",
+        (
+            "Controlled-U depolarizing region = "
+            f"{depolarizing_region_display_label(depolarizing_region)}"
+        ),
         "",
-        " N | a | r | algorithm | t | p | successes | trials | success_probability",
-        "---|---|---|-----------|---|---|-----------|--------|--------------------",
+        " N | a | r | algorithm | t | L | p | successes | trials | success_probability",
+        "---|---|---|-----------|---|---|---|-----------|--------|--------------------",
     ]
     for result in sorted(
         results,
@@ -295,7 +342,8 @@ def write_summary(results: list[OrderRecoveryResult], output_path: Path) -> None
         lines.append(
             f"{result.instance.N:>3} | {result.instance.a:>3} | "
             f"{result.instance.true_order:>3} | {algorithm_label(result.algorithm):>8} | "
-            f"{result.num_phase_bits:>2} | {result.error_probability:.6f} | "
+            f"{result.num_phase_bits:>2} | {result.num_work_qubits:>2} | "
+            f"{result.error_probability:.6f} | "
             f"{result.successful_trials:>9} | {result.trials:>6} | "
             f"{result.success_probability:.6f}"
         )
@@ -348,6 +396,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=STATEVECTOR_STANDARD_BACKEND,
         help="Standard backend. Depolarizing errors require statevector.",
     )
+    add_depolarizing_region_argument(parser)
+    add_work_register_arguments(parser)
     parser.add_argument("--seed", type=int, default=None, help="Optional RNG seed")
     parser.add_argument(
         "--output",
@@ -374,7 +424,23 @@ def main() -> None:
         algorithms = normalize_algorithms(args.algorithm)
         error_model = normalize_error_model(args.error_model)
         error_probabilities = validate_error_probabilities(args.error_probabilities)
+        if args.bits < 1:
+            raise ValueError("bits must be >= 1")
+        if args.trials_per_instance < 1:
+            raise ValueError("trials_per_instance must be >= 1")
         instances = load_instances(args.instances_file)
+        num_work_qubits = resolve_work_qubits(
+            instances,
+            requested_work_qubits=args.work_qubits,
+            fixed_work_register=args.fixed_work_register,
+        )
+        warn_if_statevector_phase_bits_below_default(
+            algorithms=algorithms,
+            standard_backend=args.standard_backend,
+            num_phase_bits=args.bits,
+            instances_or_N_values=instances,
+            num_work_qubits=num_work_qubits,
+        )
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -388,6 +454,8 @@ def main() -> None:
         num_phase_bits=args.bits,
         master_rng=master_rng,
         standard_backend=args.standard_backend,
+        num_work_qubits=num_work_qubits,
+        depolarizing_region=args.depolarizing_region,
     )
 
     probability_suffix = "_".join(
@@ -395,26 +463,44 @@ def main() -> None:
     )
     algorithm_suffix = "_".join(algorithms)
     model_suffix = error_model.replace("-", "_")
+    region_suffix = depolarizing_region_filename_segment(args.depolarizing_region)
+    work_suffix = work_register_filename_segment(num_work_qubits)
     output_path = args.output or (
         DEFAULT_OUTPUT_DIR
         / (
             "depolarizing_order_recovery_success_vs_order_"
-            f"{algorithm_suffix}_{model_suffix}_p_{probability_suffix}_t{args.bits}.png"
+            f"{algorithm_suffix}_{model_suffix}_p_{probability_suffix}_t{args.bits}"
+            f"{region_suffix}{work_suffix}.png"
         )
     )
     summary_path = (
         DEFAULT_DATA_DIR
         / (
             "depolarizing_order_recovery_success_vs_order_summary_"
-            f"{algorithm_suffix}_{model_suffix}_p_{probability_suffix}_t{args.bits}.txt"
+            f"{algorithm_suffix}_{model_suffix}_p_{probability_suffix}_t{args.bits}"
+            f"{region_suffix}{work_suffix}.txt"
         )
     )
 
-    plot_order_recovery_success(results, output_path)
-    write_summary(results, summary_path)
+    plot_order_recovery_success(
+        results,
+        output_path,
+        depolarizing_region=args.depolarizing_region,
+    )
+    write_summary(
+        results,
+        summary_path,
+        fixed_num_work_qubits=num_work_qubits,
+        depolarizing_region=args.depolarizing_region,
+    )
 
     print(f"Wrote figure: {output_path}")
     print(f"Wrote summary: {summary_path}")
+    print(f"Work register: {work_register_display_label(num_work_qubits)}")
+    print(
+        "Controlled-U depolarizing region: "
+        f"{depolarizing_region_display_label(args.depolarizing_region)}"
+    )
     print(f"time_taken_seconds: {time.perf_counter() - start_time:.3f}")
 
 

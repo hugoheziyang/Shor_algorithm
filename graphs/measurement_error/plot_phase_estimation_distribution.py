@@ -17,7 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import FormatStrFormatter, MaxNLocator
+from matplotlib.ticker import FormatStrFormatter, MaxNLocator, ScalarFormatter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +40,17 @@ from shor_common.shor_utils import (
 from shor_one_qubit.shor import shor_order_finding_attempt
 
 
+Y_AXIS_FORMAT_AUTO = "auto"
+Y_AXIS_FORMAT_DECIMAL = "decimal"
+Y_AXIS_FORMAT_SCIENTIFIC = "scientific"
+Y_AXIS_FORMAT_CHOICES = (
+    Y_AXIS_FORMAT_AUTO,
+    Y_AXIS_FORMAT_DECIMAL,
+    Y_AXIS_FORMAT_SCIENTIFIC,
+)
+SMALL_Y_AXIS_SCIENTIFIC_THRESHOLD = 0.01
+
+
 @dataclass
 class PhaseOutcomeRow:
     bits: str
@@ -47,6 +58,28 @@ class PhaseOutcomeRow:
     phase_decimal: float
     count: int
     probability: float
+
+
+def apply_probability_y_axis_format(
+    ax,
+    y_axis_format: str,
+    upper_y_limit: float,
+) -> None:
+    if y_axis_format == Y_AXIS_FORMAT_AUTO:
+        y_axis_format = (
+            Y_AXIS_FORMAT_SCIENTIFIC
+            if upper_y_limit < SMALL_Y_AXIS_SCIENTIFIC_THRESHOLD
+            else Y_AXIS_FORMAT_DECIMAL
+        )
+    if y_axis_format == Y_AXIS_FORMAT_DECIMAL:
+        ax.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
+    elif y_axis_format == Y_AXIS_FORMAT_SCIENTIFIC:
+        formatter = ScalarFormatter(useMathText=True)
+        formatter.set_scientific(True)
+        formatter.set_powerlimits((0, 0))
+        ax.yaxis.set_major_formatter(formatter)
+    else:
+        raise ValueError("unknown y-axis format")
 
 
 def is_odd_composite(n: int) -> bool:
@@ -168,6 +201,8 @@ def write_data_summary(
     error_config: ErrorConfig | None,
     seed: int | None,
     rows: list[PhaseOutcomeRow],
+    y_max: float | None = None,
+    y_axis_format: str = Y_AXIS_FORMAT_AUTO,
 ) -> None:
     """
     Write a text summary containing metadata, graph notes, and observed outcomes.
@@ -205,6 +240,8 @@ def write_data_summary(
         f"Phase-estimation bits = {num_phase_bits}",
         f"Trials = {trials}",
         f"Measurement bit-flip error = {error_label}",
+        f"Y-axis upper limit = {'auto' if y_max is None else y_max}",
+        f"Y-axis tick format = {y_axis_format}",
         f"Seed = {seed_label}",
         "",
         "Graph note:",
@@ -245,10 +282,14 @@ def plot_phase_distribution(
     error_config: ErrorConfig | None,
     rows: list[PhaseOutcomeRow],
     output_path: Path,
+    y_max: float | None = None,
+    y_axis_format: str = Y_AXIS_FORMAT_AUTO,
 ) -> None:
     """
     Create and save the empirical phase-estimation outcome distribution.
     """
+    if y_axis_format not in Y_AXIS_FORMAT_CHOICES:
+        raise ValueError("unknown y-axis format")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     x_values = [row.phase_decimal for row in rows]
@@ -283,8 +324,15 @@ def plot_phase_distribution(
     ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
     ax.xaxis.set_major_formatter(FormatStrFormatter("%.2f"))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-    ax.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
-    ax.set_ylim(bottom=0.0)
+    if y_max is None:
+        ax.set_ylim(bottom=0.0)
+    else:
+        ax.set_ylim(0.0, y_max)
+    apply_probability_y_axis_format(
+        ax,
+        y_axis_format=y_axis_format,
+        upper_y_limit=ax.get_ylim()[1],
+    )
     ax.grid(True, alpha=0.25)
 
     ax.text(
@@ -355,6 +403,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional output path for the figure",
     )
+    parser.add_argument(
+        "--y-max",
+        type=float,
+        default=None,
+        help="Optional upper limit for the empirical-probability y-axis",
+    )
+    parser.add_argument(
+        "--y-format",
+        choices=Y_AXIS_FORMAT_CHOICES,
+        default=Y_AXIS_FORMAT_AUTO,
+        help=(
+            "Y-axis tick format. Auto switches to scientific notation for "
+            "small probability ranges."
+        ),
+    )
     return parser
 
 
@@ -374,6 +437,8 @@ def main() -> None:
 
     if args.trials < 1:
         raise ValueError("trials must be >= 1")
+    if args.y_max is not None and args.y_max <= 0.0:
+        raise ValueError("y-max must be > 0")
 
     if args.bits is None:
         num_phase_bits = default_num_phase_bits(args.N)
@@ -424,6 +489,8 @@ def main() -> None:
         error_config=error_config,
         rows=rows,
         output_path=figure_output_path,
+        y_max=args.y_max,
+        y_axis_format=args.y_format,
     )
     write_data_summary(
         output_path=data_output_path,
@@ -435,6 +502,8 @@ def main() -> None:
         error_config=error_config,
         seed=args.seed,
         rows=rows,
+        y_max=args.y_max,
+        y_axis_format=args.y_format,
     )
 
     seed_label = "random" if args.seed is None else str(args.seed)
@@ -446,6 +515,8 @@ def main() -> None:
     print(f"Phase-estimation bits = {num_phase_bits}")
     print(f"Trials = {args.trials}")
     print(f"Measurement bit-flip error: {measurement_bitflip_label(error_config)}")
+    print(f"Y-axis upper limit: {'auto' if args.y_max is None else args.y_max}")
+    print(f"Y-axis tick format: {args.y_format}")
     print(f"Seed = {seed_label}")
     print(f"Elapsed time: {time.perf_counter() - start_time:.2f} s")
 

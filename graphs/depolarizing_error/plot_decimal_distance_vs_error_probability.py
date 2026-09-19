@@ -27,13 +27,24 @@ from error_correction.code_distance import (
     AverageDecimalDistanceEstimate,
     estimate_average_decimal_distance,
 )
+from graphs.depolarizing_error.work_register import (
+    add_work_register_arguments,
+    effective_work_qubits_for_N,
+    resolve_work_qubits,
+    work_register_display_label,
+    work_register_filename_segment,
+)
 from graphs.depolarizing_error.plot_hamming_distance_vs_error_probability import (
     BLOCK_DEPOLARIZING_MODEL,
     ErrorModelHammingDistanceSweep,
     HammingDistanceInstance,
     PER_QUBIT_DEPOLARIZING_MODEL,
+    add_depolarizing_region_argument,
     build_instances as build_hamming_instances,
     build_probability_values,
+    depolarizing_region_display_label,
+    depolarizing_region_filename_segment,
+    depolarizing_region_phase_bits,
     error_config_for_model,
     error_model_display_label,
     error_models_filename_suffix,
@@ -46,6 +57,8 @@ from graphs.depolarizing_error.plot_hamming_distance_vs_error_probability import
     validate_overlay_mode as validate_hamming_overlay_mode,
 )
 from shor_common.shor_utils import default_num_phase_bits
+from shor_common.errors import ControlledUnitaryDepolarizingRangeSpec
+from shor_standard.analytic_sampling import multiplicative_order
 
 
 @dataclass(frozen=True)
@@ -69,6 +82,7 @@ class ErrorModelDecimalDistanceSweep:
     error_model: str
     num_phase_bits: int
     results: list[DecimalDistanceSweepResult]
+    num_work_qubits: int | None = None
 
 
 def _as_hamming_instances(
@@ -113,6 +127,7 @@ def instance_filename_suffix_with_bits(
             error_model=sweep.error_model,
             num_phase_bits=sweep.num_phase_bits,
             results=[],
+            num_work_qubits=sweep.num_work_qubits,
         )
         for sweep in sweeps
     ]
@@ -139,6 +154,7 @@ def instance_display_label_with_bits(
             error_model=sweep.error_model,
             num_phase_bits=sweep.num_phase_bits,
             results=[],
+            num_work_qubits=sweep.num_work_qubits,
         )
         for sweep in sweeps
     ]
@@ -166,6 +182,8 @@ def curve_label(
     if overlay_instances:
         parts = [f"N = {sweep.N}", f"a = {sweep.a}"]
         parts.append(f"t = {sweep.num_phase_bits}")
+        if sweep.num_work_qubits is not None:
+            parts.append(f"L = {sweep.num_work_qubits}")
         return ", ".join(parts)
 
     return error_model_display_label(sweep.error_model)
@@ -179,16 +197,29 @@ def simulate_for_error_probability(
     error_probability: float,
     trials: int,
     rng: np.random.Generator,
+    num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> DecimalDistanceSweepResult:
     """
     Estimate the average clean/noisy decimal distance for one fixed p.
     """
+    true_order = multiplicative_order(a, N)
+    allowed_phase_bits = depolarizing_region_phase_bits(
+        num_phase_bits=num_phase_bits,
+        true_order=true_order,
+        depolarizing_region=depolarizing_region,
+    )
     estimate: AverageDecimalDistanceEstimate = estimate_average_decimal_distance(
         N=N,
         a=a,
         num_phase_bits=num_phase_bits,
         trials=trials,
-        error_config=error_config_for_model(error_model, error_probability),
+        error_config=error_config_for_model(
+            error_model,
+            error_probability,
+            allowed_phase_bits=allowed_phase_bits,
+        ),
+        num_work_qubits=num_work_qubits,
         rng=rng,
     )
 
@@ -208,6 +239,8 @@ def simulate_for_error_model(
     probability_values: list[float],
     trials: int,
     master_rng: np.random.Generator,
+    num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> ErrorModelDecimalDistanceSweep:
     """
     Estimate average decimal distance across all requested p values.
@@ -224,6 +257,8 @@ def simulate_for_error_model(
                 error_probability=float(error_probability),
                 trials=trials,
                 rng=model_rng,
+                num_work_qubits=num_work_qubits,
+                depolarizing_region=depolarizing_region,
             )
         )
 
@@ -233,6 +268,7 @@ def simulate_for_error_model(
         error_model=normalize_error_model(error_model),
         num_phase_bits=num_phase_bits,
         results=results,
+        num_work_qubits=effective_work_qubits_for_N(N, num_work_qubits),
     )
 
 
@@ -242,6 +278,8 @@ def write_data_summary(
     log_p_grid: bool,
     seed: int | None,
     sweeps: list[ErrorModelDecimalDistanceSweep],
+    fixed_num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> None:
     """
     Write a text summary containing metadata, graph notes, and per-p data.
@@ -287,6 +325,11 @@ def write_data_summary(
         len(bits_header),
         *(len(str(sweep.num_phase_bits)) for sweep in sweeps),
     )
+    work_header = "work qubits"
+    work_width = max(
+        len(work_header),
+        *(len(str(sweep.num_work_qubits)) for sweep in sweeps),
+    )
     p_width = max(
         len(p_header),
         *(len(f"{result.error_probability:.3f}") for result in all_results),
@@ -311,6 +354,11 @@ def write_data_summary(
             for N, a in distinct_instances
         ]),
         f"Phase-estimation bits = {bit_count_label}",
+        f"Work register = {work_register_display_label(fixed_num_work_qubits)}",
+        (
+            "Controlled-U depolarizing region = "
+            f"{depolarizing_region_display_label(depolarizing_region)}"
+        ),
         f"Trials per probability value = {trials}",
         f"Error models = {model_label}",
         "Probability grid = "
@@ -328,7 +376,7 @@ def write_data_summary(
         "  Each trial pairs a clean Kitaev phase-estimation run with a noisy run",
         "  The clean and noisy runs share the same measurement RNG seed",
         "  Measurement bit-flip uses independent per-detection flips with probability p",
-        "  Depolarizing models apply trajectory Pauli errors after each controlled-U block",
+        "  Depolarizing models apply trajectory Pauli errors after selected controlled-U blocks",
         "  The distance is min(|x-y|, 1-|x-y|) after converting bit strings to phases",
         "  Probability values use a "
         f"{'logarithmic' if log_p_grid else 'linear'} sweep in p",
@@ -339,6 +387,7 @@ def write_data_summary(
         f"{base_header:>{base_width}} | "
         f"{model_header:>{model_width}} | "
         f"{bits_header:>{bits_width}} | "
+        f"{work_header:>{work_width}} | "
         f"{p_header:>{p_width}} | "
         f"{average_header:>{average_width}} | "
         f"{total_header:>{total_width}} | "
@@ -353,6 +402,7 @@ def write_data_summary(
                 f"{sweep.a:>{base_width}} | "
                 f"{error_model_display_label(sweep.error_model):>{model_width}} | "
                 f"{sweep.num_phase_bits:>{bits_width}} | "
+                f"{sweep.num_work_qubits:>{work_width}} | "
                 f"{result.error_probability:>{p_width}.3f} | "
                 f"{result.average_decimal_distance:>{average_width}.6f} | "
                 f"{result.total_decimal_distance:>{total_width}.6f} | "
@@ -367,6 +417,8 @@ def plot_decimal_distance_vs_error_probability(
     sweeps: list[ErrorModelDecimalDistanceSweep],
     log_p_grid: bool,
     output_path: Path,
+    fixed_num_work_qubits: int | None = None,
+    depolarizing_region: ControlledUnitaryDepolarizingRangeSpec = None,
 ) -> None:
     """
     Create and save the decimal-distance plot versus error probability p.
@@ -440,6 +492,8 @@ def plot_decimal_distance_vs_error_probability(
             if len({sweep.num_phase_bits for sweep in sweeps}) == 1
             else "phase bits vary"
         )
+        + f"\nwork register = {work_register_display_label(fixed_num_work_qubits)}"
+        + f"\nregion = {depolarizing_region_display_label(depolarizing_region)}"
         + f"\ntrials per p = {trials}",
         transform=ax.transAxes,
         ha="right",
@@ -526,6 +580,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "This requires min-p > 0."
         ),
     )
+    add_depolarizing_region_argument(parser)
+    add_work_register_arguments(parser)
     parser.add_argument(
         "--seed",
         type=int,
@@ -554,6 +610,11 @@ def main() -> None:
         raise ValueError("bits must be >= 1")
 
     instances = build_instances(args.N, args.a)
+    num_work_qubits = resolve_work_qubits(
+        instances,
+        requested_work_qubits=args.work_qubits,
+        fixed_work_register=args.fixed_work_register,
+    )
     error_models = normalize_error_models(args.error_model)
     validate_overlay_mode(instances, error_models)
     probability_values = build_probability_values(
@@ -581,12 +642,16 @@ def main() -> None:
                     probability_values=probability_values,
                     trials=args.trials,
                     master_rng=master_rng,
+                    num_work_qubits=num_work_qubits,
+                    depolarizing_region=args.depolarizing_region,
                 )
             )
 
     suffix = (
         f"{instance_filename_suffix_with_bits(sweeps)}_"
         f"{error_models_filename_suffix(error_models)}"
+        f"{depolarizing_region_filename_segment(args.depolarizing_region)}"
+        f"{work_register_filename_segment(num_work_qubits)}"
     )
 
     if args.output is None:
@@ -609,6 +674,8 @@ def main() -> None:
         sweeps=sweeps,
         log_p_grid=args.log_p_grid,
         output_path=figure_output_path,
+        fixed_num_work_qubits=num_work_qubits,
+        depolarizing_region=args.depolarizing_region,
     )
     write_data_summary(
         output_path=data_output_path,
@@ -616,6 +683,8 @@ def main() -> None:
         log_p_grid=args.log_p_grid,
         seed=args.seed,
         sweeps=sweeps,
+        fixed_num_work_qubits=num_work_qubits,
+        depolarizing_region=args.depolarizing_region,
     )
 
     seed_label = "random" if args.seed is None else str(args.seed)
@@ -638,7 +707,12 @@ def main() -> None:
                 for sweep in sweeps
             )
         )
+    print(f"Work register: {work_register_display_label(num_work_qubits)}")
     print(f"Error models: {model_label}")
+    print(
+        "Controlled-U depolarizing region: "
+        f"{depolarizing_region_display_label(args.depolarizing_region)}"
+    )
     print(f"Trials per probability value: {args.trials}")
     print(
         "Probability grid: "

@@ -3,7 +3,7 @@ import numpy as np
 
 from shor_common.classical_post import shor_factors_from_order
 from shor_common.errors import validate_error_config
-from shor_common.modular_unitaries import work_dim
+from shor_common.modular_unitaries import validate_work_register_size, work_dim
 from shor_common.shor_utils import (
     VALID_POSTPROCESS_MODES,
     choose_random_a,
@@ -29,6 +29,8 @@ def shor_order_finding_attempt(
     rng=None,
     postprocess_mode: str = "one_shot",
     error_config=None,
+    num_work_qubits: int | None = None,
+    padding_phase_radians: float = 0.0,
 ) -> dict:
     """
     Run one iterative phase-estimation attempt for the modular multiplication
@@ -40,10 +42,16 @@ def shor_order_finding_attempt(
     postprocess_mode = validate_postprocess_mode(postprocess_mode)
     error_config = validate_error_config(error_config)
 
-    M = work_dim(N)
+    effective_num_work_qubits = validate_work_register_size(N, num_work_qubits)
+    M = work_dim(N, num_work_qubits=effective_num_work_qubits)
     initial_work_state = make_basis_state(1, M)
 
-    controlled_power_factory = make_controlled_power_factory(a, N)
+    controlled_power_factory = make_controlled_power_factory(
+        a,
+        N,
+        num_work_qubits=effective_num_work_qubits,
+        padding_phase_radians=padding_phase_radians,
+    )
 
     bits, phase_estimate, final_work_state = iterative_phase_estimation(
         initial_work_state=initial_work_state,
@@ -62,6 +70,8 @@ def shor_order_finding_attempt(
         "order": order,
         "postprocess_mode": postprocess_mode,
         "error_config": error_config.to_dict(),
+        "num_work_qubits": effective_num_work_qubits,
+        "padding_phase_radians": float(padding_phase_radians),
         "final_work_state": final_work_state,
     }
 
@@ -73,6 +83,7 @@ def shor_attempt(
     rng=None,
     postprocess_mode: str = "one_shot",
     error_config=None,
+    num_work_qubits: int | None = None,
 ) -> dict:
     """
     Perform one top-level Shor attempt.
@@ -143,6 +154,7 @@ def shor_attempt(
         rng=rng,
         postprocess_mode=postprocess_mode,
         error_config=error_config,
+        num_work_qubits=num_work_qubits,
     )
 
     r = order_result["order"]
@@ -156,6 +168,7 @@ def shor_attempt(
         "num_phase_bits": num_phase_bits,
         "postprocess_mode": postprocess_mode,
         "error_config": error_config.to_dict(),
+        "num_work_qubits": order_result["num_work_qubits"],
         "bits": order_result["bits"],
         "phase_estimate": order_result["phase_estimate"],
         "order": r,
@@ -173,6 +186,7 @@ def shor_factor(
     rng=None,
     postprocess_mode: str = "one_shot",
     error_config=None,
+    num_work_qubits: int | None = None,
 ) -> dict:
     """
     Repeat Shor attempts until factors are found or the attempt budget is exhausted.
@@ -195,6 +209,7 @@ def shor_factor(
             rng=rng,
             postprocess_mode=postprocess_mode,
             error_config=error_config,
+            num_work_qubits=num_work_qubits,
         )
 
         if result["success"]:

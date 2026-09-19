@@ -37,6 +37,43 @@ def test_standard_order_finding_attempt_returns_expected_keys():
     assert "final_work_state" in result
 
 
+def test_standard_order_finding_attempt_accepts_fixed_work_register_size():
+    result = shor_order_finding_attempt(
+        N=15,
+        a=2,
+        num_control_qubits=8,
+        num_work_qubits=5,
+        rng=np.random.default_rng(1234),
+    )
+
+    assert result["num_work_qubits"] == 5
+    assert result["final_work_state"].shape == (32,)
+
+
+def test_standard_analytic_backend_rejects_fixed_work_register_size():
+    with pytest.raises(ValueError, match="statevector"):
+        shor_order_finding_attempt(
+            N=15,
+            a=2,
+            num_control_qubits=8,
+            num_work_qubits=5,
+            standard_backend=ANALYTIC_STANDARD_BACKEND,
+            rng=np.random.default_rng(1234),
+        )
+
+
+def test_standard_analytic_backend_rejects_padded_state_phase():
+    with pytest.raises(ValueError, match="statevector"):
+        shor_order_finding_attempt(
+            N=15,
+            a=2,
+            num_control_qubits=8,
+            padding_phase_radians=np.pi / 2.0,
+            standard_backend=ANALYTIC_STANDARD_BACKEND,
+            rng=np.random.default_rng(1234),
+        )
+
+
 def test_standard_order_finding_attempt_passes_error_config(monkeypatch):
     captured = {}
 
@@ -147,6 +184,7 @@ def test_standard_shor_factor_one_shot_defaults_to_single_attempt(monkeypatch):
         error_config=None,
         standard_backend="statevector",
         analytic_window=100,
+        num_work_qubits=None,
     ):
         calls.append((postprocess_mode, error_config, standard_backend, analytic_window))
         return {

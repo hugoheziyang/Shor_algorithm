@@ -10,9 +10,10 @@ from shor_common.errors import (
     apply_controlled_unitary_depolarizing_error,
     apply_measurement_bitflip,
     choose_measurement_bitflip_mask,
+    controlled_unitary_depolarizing_allowed_for_phase_bit,
     validate_error_config,
 )
-from shor_common.modular_unitaries import work_dim
+from shor_common.modular_unitaries import validate_work_register_size, work_dim
 from shor_common.shor_utils import (
     default_num_phase_bits,
     make_basis_state,
@@ -38,6 +39,7 @@ class PhaseEstimationHammingDistanceTrial:
     noisy_phase_estimate: float
     measurement_bitflip_mask: list[bool]
     error_config: dict[str, bool | float]
+    num_work_qubits: int | None = None
 
     @property
     def hamming_distance(self) -> int:
@@ -58,6 +60,7 @@ class AverageHammingDistanceEstimate:
     num_phase_bits: int
     total_hamming_distance: int
     error_config: dict[str, bool | float]
+    num_work_qubits: int | None = None
 
     @property
     def average_hamming_distance(self) -> float:
@@ -74,6 +77,7 @@ class AverageDecimalDistanceEstimate:
     num_phase_bits: int
     total_decimal_distance: float
     error_config: dict[str, bool | float]
+    num_work_qubits: int | None = None
 
     @property
     def average_decimal_distance(self) -> float:
@@ -165,6 +169,7 @@ def one_iterative_pe_diagnostic_step(
     measurement_rng=None,
     error_rng=None,
     error_config: ErrorConfig | None = None,
+    phase_bit_number: int | None = None,
 ) -> tuple[int, np.ndarray]:
     """
     Perform one PE step with separate RNG streams for measurement and errors.
@@ -179,11 +184,18 @@ def one_iterative_pe_diagnostic_step(
     psi = make_joint_state(work_state)
     psi = apply_control_gate(psi, H())
     psi = apply_controlled_work_operator(psi, controlled_power_op)
-    psi = apply_controlled_unitary_depolarizing_error(
-        psi,
-        error_config=error_config,
-        rng=error_rng,
-    )
+    if (
+        phase_bit_number is None
+        or controlled_unitary_depolarizing_allowed_for_phase_bit(
+            error_config,
+            phase_bit_number,
+        )
+    ):
+        psi = apply_controlled_unitary_depolarizing_error(
+            psi,
+            error_config=error_config,
+            rng=error_rng,
+        )
 
     if feedback != 0.0:
         psi = apply_control_gate(psi, phase(feedback))
@@ -246,6 +258,7 @@ def iterative_phase_estimation_for_diagnostics(
             measurement_rng=measurement_rng,
             error_rng=error_rng,
             error_config=error_config,
+            phase_bit_number=j,
         )
 
         bits[j - 1] = apply_measurement_bitflip(
@@ -264,6 +277,7 @@ def run_phase_estimation_hamming_distance_trial(
     num_phase_bits: int | None = None,
     error_config: ErrorConfig | None = None,
     measurement_bitflip_mask: list[bool] | None = None,
+    num_work_qubits: int | None = None,
     rng=None,
 ) -> PhaseEstimationHammingDistanceTrial:
     """
@@ -279,6 +293,7 @@ def run_phase_estimation_hamming_distance_trial(
         num_phase_bits = default_num_phase_bits(N)
     if num_phase_bits < 1:
         raise ValueError("num_phase_bits must be >= 1")
+    effective_num_work_qubits = validate_work_register_size(N, num_work_qubits)
 
     measurement_seed = int(rng.integers(0, 2 ** 63 - 1))
     measurement_error_seed = int(rng.integers(0, 2 ** 63 - 1))
@@ -293,8 +308,15 @@ def run_phase_estimation_hamming_distance_trial(
     elif len(measurement_bitflip_mask) != num_phase_bits:
         raise ValueError("measurement_bitflip_mask must have length num_phase_bits")
 
-    initial_work_state = make_basis_state(1, work_dim(N))
-    controlled_power_factory = make_controlled_power_factory(a, N)
+    initial_work_state = make_basis_state(
+        1,
+        work_dim(N, num_work_qubits=effective_num_work_qubits),
+    )
+    controlled_power_factory = make_controlled_power_factory(
+        a,
+        N,
+        num_work_qubits=effective_num_work_qubits,
+    )
 
     clean_bits, clean_phase_estimate, _ = iterative_phase_estimation_for_diagnostics(
         initial_work_state=initial_work_state,
@@ -323,6 +345,7 @@ def run_phase_estimation_hamming_distance_trial(
         noisy_phase_estimate=noisy_phase_estimate,
         measurement_bitflip_mask=measurement_bitflip_mask,
         error_config=error_config.to_dict(),
+        num_work_qubits=effective_num_work_qubits,
     )
 
 
@@ -332,6 +355,7 @@ def estimate_average_hamming_distance(
     trials: int,
     num_phase_bits: int | None = None,
     error_config: ErrorConfig | None = None,
+    num_work_qubits: int | None = None,
     rng=None,
 ) -> AverageHammingDistanceEstimate:
     """
@@ -349,6 +373,7 @@ def estimate_average_hamming_distance(
         num_phase_bits = default_num_phase_bits(N)
     if num_phase_bits < 1:
         raise ValueError("num_phase_bits must be >= 1")
+    effective_num_work_qubits = validate_work_register_size(N, num_work_qubits)
 
     total_hamming_distance = 0
     for _ in range(trials):
@@ -357,6 +382,7 @@ def estimate_average_hamming_distance(
             a=a,
             num_phase_bits=num_phase_bits,
             error_config=error_config,
+            num_work_qubits=effective_num_work_qubits,
             rng=rng,
         )
         total_hamming_distance += trial.hamming_distance
@@ -366,6 +392,7 @@ def estimate_average_hamming_distance(
         num_phase_bits=num_phase_bits,
         total_hamming_distance=total_hamming_distance,
         error_config=error_config.to_dict(),
+        num_work_qubits=effective_num_work_qubits,
     )
 
 
@@ -375,6 +402,7 @@ def estimate_average_decimal_distance(
     trials: int,
     num_phase_bits: int | None = None,
     error_config: ErrorConfig | None = None,
+    num_work_qubits: int | None = None,
     rng=None,
 ) -> AverageDecimalDistanceEstimate:
     """
@@ -392,6 +420,7 @@ def estimate_average_decimal_distance(
         num_phase_bits = default_num_phase_bits(N)
     if num_phase_bits < 1:
         raise ValueError("num_phase_bits must be >= 1")
+    effective_num_work_qubits = validate_work_register_size(N, num_work_qubits)
 
     total_decimal_distance = 0.0
     for _ in range(trials):
@@ -400,6 +429,7 @@ def estimate_average_decimal_distance(
             a=a,
             num_phase_bits=num_phase_bits,
             error_config=error_config,
+            num_work_qubits=effective_num_work_qubits,
             rng=rng,
         )
         total_decimal_distance += trial.decimal_distance
@@ -409,4 +439,5 @@ def estimate_average_decimal_distance(
         num_phase_bits=num_phase_bits,
         total_decimal_distance=total_decimal_distance,
         error_config=error_config.to_dict(),
+        num_work_qubits=effective_num_work_qubits,
     )

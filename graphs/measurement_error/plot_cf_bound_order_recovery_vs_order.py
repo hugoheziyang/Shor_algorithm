@@ -46,6 +46,7 @@ from graphs.measurement_error.plot_order_recovery_success_vs_order import (
     instances_file_filename_segment,
     load_order_recovery_instances_from_file,
     normalize_algorithms,
+    standard_statevector_allows_subdefault_phase_bits,
     standard_backend_filename_segment,
     validate_error_probabilities,
     validate_statevector_budget,
@@ -70,7 +71,7 @@ from shor_standard.backends import (
 from shor_standard.shor import shor_order_finding_attempt as standard_order_attempt
 
 
-DEFAULT_INSTANCES_FILE = Path(__file__).resolve().parent / "config" / "order_recovery_instances.json"
+DEFAULT_INSTANCES_FILE = REPO_ROOT / "graphs" / "config" / "order_recovery_instances.json"
 DEFAULT_NUM_PHASE_BITS = 29
 
 A_PROBABILITY = "within_bound"
@@ -1036,6 +1037,10 @@ def main() -> None:
             num_phase_bits=args.bits,
             min_order=args.min_order,
             max_order=args.max_order,
+            enforce_default_phase_bits=not standard_statevector_allows_subdefault_phase_bits(
+                algorithms,
+                args.standard_backend,
+            ),
         )
         validate_statevector_budget(
             algorithms=algorithms,

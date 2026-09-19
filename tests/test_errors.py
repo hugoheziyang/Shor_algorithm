@@ -2,6 +2,9 @@ import numpy as np
 import pytest
 
 from shor_common.errors import (
+    CONTROLLED_UNITARY_DEPOLARIZING_DANGEROUS_RANGE,
+    CONTROLLED_UNITARY_DEPOLARIZING_LEADING_RANGE,
+    CONTROLLED_UNITARY_DEPOLARIZING_SAFE_TAIL_RANGE,
     ErrorConfig,
     apply_measurement_bitflip,
     apply_controlled_unitary_depolarizing_error,
@@ -10,10 +13,13 @@ from shor_common.errors import (
     choose_work_per_qubit_depolarizing_errors,
     choose_measurement_bitflip_mask,
     choose_measurement_bitflip_index,
+    controlled_unitary_depolarizing_allowed_for_phase_bit,
+    controlled_unitary_depolarizing_phase_bits,
     format_measurement_bitflip_probability,
     measurement_bitflip_filename_suffix,
     measurement_bitflip_label,
     measurement_bitflip_title_suffix,
+    normalize_controlled_unitary_depolarizing_paulis,
     parse_measurement_bitflip_error_arg,
     validate_error_config,
 )
@@ -69,6 +75,79 @@ def test_validate_error_config_accepts_per_qubit_depolarizing_probability():
         "measurement_bitflip": False,
         "controlled_unitary_per_qubit_depolarizing_probability": 0.25,
     }
+
+
+def test_validate_error_config_accepts_allowed_depolarizing_phase_bits():
+    config = validate_error_config(
+        ErrorConfig(
+            controlled_unitary_depolarizing_probability=0.25,
+            controlled_unitary_depolarizing_allowed_phase_bits=(3, 1, 3),
+        )
+    )
+
+    assert config.controlled_unitary_depolarizing_allowed_phase_bits == (1, 3)
+    assert config.to_dict() == {
+        "measurement_bitflip": False,
+        "controlled_unitary_depolarizing_probability": 0.25,
+        "controlled_unitary_depolarizing_allowed_phase_bits": [1, 3],
+    }
+
+
+def test_validate_error_config_accepts_depolarizing_pauli_subset():
+    config = validate_error_config(
+        ErrorConfig(
+            controlled_unitary_depolarizing_probability=0.25,
+            controlled_unitary_depolarizing_paulis=("x", "Z", "x"),
+        )
+    )
+
+    assert config.controlled_unitary_depolarizing_paulis == ("X", "Z")
+    assert config.to_dict() == {
+        "measurement_bitflip": False,
+        "controlled_unitary_depolarizing_probability": 0.25,
+        "controlled_unitary_depolarizing_paulis": ["X", "Z"],
+    }
+
+
+def test_normalize_controlled_unitary_depolarizing_paulis_rejects_invalid_label():
+    with pytest.raises(ValueError, match="X, Y, Z"):
+        normalize_controlled_unitary_depolarizing_paulis(("X", "A"))
+
+
+def test_controlled_unitary_depolarizing_phase_bit_ranges_use_order_resolution():
+    assert controlled_unitary_depolarizing_phase_bits(
+        num_phase_bits=10,
+        true_order=16,
+        range_names=CONTROLLED_UNITARY_DEPOLARIZING_LEADING_RANGE,
+    ) == (1, 2, 3, 4)
+    assert controlled_unitary_depolarizing_phase_bits(
+        num_phase_bits=10,
+        true_order=16,
+        range_names=CONTROLLED_UNITARY_DEPOLARIZING_DANGEROUS_RANGE,
+    ) == (5, 6, 7, 8)
+    assert controlled_unitary_depolarizing_phase_bits(
+        num_phase_bits=10,
+        true_order=16,
+        range_names=CONTROLLED_UNITARY_DEPOLARIZING_SAFE_TAIL_RANGE,
+    ) == (9, 10)
+    assert controlled_unitary_depolarizing_phase_bits(
+        num_phase_bits=10,
+        true_order=16,
+        range_names=(
+            CONTROLLED_UNITARY_DEPOLARIZING_LEADING_RANGE,
+            CONTROLLED_UNITARY_DEPOLARIZING_DANGEROUS_RANGE,
+        ),
+    ) == (1, 2, 3, 4, 5, 6, 7, 8)
+
+
+def test_controlled_unitary_depolarizing_allowed_for_phase_bit_respects_filter():
+    config = ErrorConfig(
+        controlled_unitary_depolarizing_probability=0.25,
+        controlled_unitary_depolarizing_allowed_phase_bits=(2, 4),
+    )
+
+    assert controlled_unitary_depolarizing_allowed_for_phase_bit(config, 2)
+    assert not controlled_unitary_depolarizing_allowed_for_phase_bit(config, 3)
 
 
 def test_validate_error_config_rejects_depolarizing_probability_out_of_range():
@@ -175,6 +254,18 @@ def test_choose_work_depolarizing_error_respects_probability_extremes():
     assert 0 <= work_qubit < 3
     assert pauli in ("X", "Y", "Z")
 
+    selected_pauli_error = choose_work_depolarizing_error(
+        3,
+        error_config=ErrorConfig(
+            controlled_unitary_depolarizing_probability=1.0,
+            controlled_unitary_depolarizing_paulis=("Z",),
+        ),
+        rng=np.random.default_rng(123),
+    )
+    assert selected_pauli_error is not None
+    _, selected_pauli = selected_pauli_error
+    assert selected_pauli == "Z"
+
 
 def test_choose_work_per_qubit_depolarizing_errors_respects_probability_extremes():
     assert (
@@ -198,6 +289,17 @@ def test_choose_work_per_qubit_depolarizing_errors_respects_probability_extremes
     assert len(sampled_errors) == 3
     assert [work_qubit for work_qubit, _ in sampled_errors] == [0, 1, 2]
     assert all(pauli in ("X", "Y", "Z") for _, pauli in sampled_errors)
+
+    selected_pauli_errors = choose_work_per_qubit_depolarizing_errors(
+        3,
+        error_config=ErrorConfig(
+            controlled_unitary_per_qubit_depolarizing_probability=1.0,
+            controlled_unitary_depolarizing_paulis=("X",),
+        ),
+        rng=np.random.default_rng(123),
+    )
+    assert len(selected_pauli_errors) == 3
+    assert all(pauli == "X" for _, pauli in selected_pauli_errors)
 
 
 def test_apply_work_qubit_pauli_x_on_joint_state():

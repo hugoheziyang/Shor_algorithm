@@ -50,6 +50,7 @@ from graphs.measurement_error.plot_order_recovery_success_vs_order import (
     analytic_window_mass_diagnostics_for_instances,
     instances_file_filename_segment,
     load_order_recovery_instances_from_file,
+    standard_statevector_allows_subdefault_phase_bits,
     standard_backend_filename_segment,
     validate_statevector_budget,
 )
@@ -634,6 +635,10 @@ def main() -> None:
             num_phase_bits=args.bits,
             min_order=args.min_order,
             max_order=args.max_order,
+            enforce_default_phase_bits=not standard_statevector_allows_subdefault_phase_bits(
+                [KITAEV_ALGORITHM, STANDARD_ALGORITHM],
+                args.standard_backend,
+            ),
         )
         validate_statevector_budget(
             algorithms=[KITAEV_ALGORITHM, STANDARD_ALGORITHM],

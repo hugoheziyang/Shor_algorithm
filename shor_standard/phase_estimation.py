@@ -6,6 +6,7 @@ from shor_common.errors import (
     apply_controlled_unitary_depolarizing_error,
     apply_measurement_bitflip,
     choose_measurement_bitflip_mask,
+    controlled_unitary_depolarizing_allowed_for_phase_bit,
     validate_error_config,
 )
 
@@ -172,11 +173,16 @@ def apply_controlled_power_sequence(
             control_qubit=control_qubit,
             num_control_qubits=num_control_qubits,
         )
-        psi = apply_controlled_unitary_depolarizing_error(
-            psi,
-            error_config=error_config,
-            rng=rng,
-        )
+        phase_bit_number = control_qubit + 1
+        if controlled_unitary_depolarizing_allowed_for_phase_bit(
+            error_config,
+            phase_bit_number,
+        ):
+            psi = apply_controlled_unitary_depolarizing_error(
+                psi,
+                error_config=error_config,
+                rng=rng,
+            )
 
     return psi
 

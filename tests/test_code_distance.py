@@ -114,6 +114,20 @@ def test_hamming_distance_trial_is_zero_without_errors():
     assert trial.measurement_bitflip_mask == [False] * 6
 
 
+def test_hamming_distance_trial_accepts_fixed_work_register_size():
+    trial = run_phase_estimation_hamming_distance_trial(
+        N=21,
+        a=11,
+        num_phase_bits=6,
+        num_work_qubits=6,
+        error_config=ErrorConfig(),
+        rng=np.random.default_rng(1234),
+    )
+
+    assert trial.num_work_qubits == 6
+    assert trial.hamming_distance == 0
+
+
 def test_hamming_distance_trial_detects_single_measurement_flip():
     trial = run_phase_estimation_hamming_distance_trial(
         N=21,
@@ -140,6 +154,7 @@ def test_average_hamming_distance_is_zero_without_errors():
     assert estimate.total_hamming_distance == 0
     assert estimate.average_hamming_distance == 0.0
     assert estimate.average_normalized_hamming_distance == 0.0
+    assert estimate.num_work_qubits == 5
 
 
 def test_average_decimal_distance_is_zero_without_errors():
